@@ -4,6 +4,7 @@ All notable game changes are recorded here. Newest entries at the top. See `CLAU
 
 ## 2026-04-12
 
+- **ui:** Flipped the egg step counter from "remaining / total" to "walked / total" in both the Items view and the Egg Shop inventory — reads more naturally as progress (e.g. `3 / 150` after three steps instead of `147 / 150`). Underlying `EggInstance.stepsRemaining` still ticks down, only the display is inverted.
 - **ui:** Beefed up the **egg display in the Items view** — eggs now render as full 50-tall cards with a tier-colored border, 40×40 sprite, bold name, step count shown as `remaining / total`, and a **progress bar ticking toward hatch**. Header shows the egg count. "Ready to hatch!" flavor appears when `stepsRemaining === 0`. The old 28-tall row was easy to miss below a long item list.
 - **ui:** Main-menu inventory summary now appends `🥚 x<count>` (or shows `🥚 Eggs xN` alone if the player only carries eggs), so an egg you just bought is visible without opening the Items screen.
 - **build:** Added a **DEV: +5000g** button on every occupied save slot card in the title screen so an existing run can be topped up for egg testing without starting over. Backed by a new `addGoldToSlot()` helper in `saveManager.ts` that edits the raw save JSON directly. Slot card height grew from 150 → 180 to fit the extra row.

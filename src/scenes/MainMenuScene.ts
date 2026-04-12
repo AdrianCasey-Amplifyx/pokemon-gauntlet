@@ -306,13 +306,13 @@ export class MainMenuScene extends Phaser.Scene {
           fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
         }).setOrigin(0, 0.5);
 
-        // Steps remaining, right-aligned
-        this.add.text(GAME_W - 25, y - 12, `${egg.stepsRemaining} / ${tierData.stepsToHatch}`, {
+        // Steps walked, right-aligned (e.g. "3 / 150")
+        const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
+        this.add.text(GAME_W - 25, y - 12, `${stepsTaken} / ${tierData.stepsToHatch}`, {
           fontSize: "11px", fontFamily: "monospace", color: "#aaccff", fontStyle: "bold",
         }).setOrigin(1, 0.5);
 
         // Flavor line
-        const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
         const flavor = egg.stepsRemaining === 0 ? "Ready to hatch!" : "Walk in dungeons to hatch";
         this.add.text(65, y + 5, flavor, {
           fontSize: "9px", fontFamily: "monospace",
@@ -518,7 +518,8 @@ export class MainMenuScene extends Phaser.Scene {
           img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
         this.add.text(GAME_W / 2 - 115, y, `${tierData.name}`, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0, 0.5);
-        this.add.text(GAME_W / 2 + 140, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
+        const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
+        this.add.text(GAME_W / 2 + 140, y, `${stepsTaken} / ${tierData.stepsToHatch}`, { fontSize: "10px", fontFamily: "monospace", color: "#aaccff" }).setOrigin(1, 0.5);
       });
     }
   }
