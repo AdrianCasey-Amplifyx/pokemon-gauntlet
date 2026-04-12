@@ -19,6 +19,8 @@ import {
 import { EGG_TIERS, getAllEggTiers, createEgg } from "../data/eggs.ts";
 import { getMove } from "../data/moves.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
+import { showToast } from "../ui/Toast.ts";
+import { describeItemResult } from "../ui/itemFeedback.ts";
 import { generateDungeon } from "../core/mapGenerator.ts";
 import { WORLD_NAMES, MAPS_PER_WORLD } from "../data/worlds.ts";
 
@@ -143,21 +145,12 @@ export class MainMenuScene extends Phaser.Scene {
     const allFull = this.gameState.roster.every((p) => p.currentHP >= p.maxHP);
 
     if (allFull) {
-      // Flash a message — all Pokemon already healthy
-      const msg = this.add.text(GAME_W / 2, GAME_H / 2, "All Pokemon are healthy!", {
-        fontSize: "16px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold",
-        stroke: "#000000", strokeThickness: 3,
-      }).setOrigin(0.5).setDepth(100);
-      this.tweens.add({ targets: msg, alpha: 0, duration: 1500, delay: 500, onComplete: () => msg.destroy() });
+      this.showToast("All Pokemon are already healthy!", { color: "#88ffaa", sfx: "error" });
       return;
     }
 
     if (this.gameState.gold < cost) {
-      const msg = this.add.text(GAME_W / 2, GAME_H / 2, "Not enough gold!", {
-        fontSize: "16px", fontFamily: "monospace", color: "#ff4444", fontStyle: "bold",
-        stroke: "#000000", strokeThickness: 3,
-      }).setOrigin(0.5).setDepth(100);
-      this.tweens.add({ targets: msg, alpha: 0, duration: 1500, delay: 500, onComplete: () => msg.destroy() });
+      this.showToast("Not enough gold!", { color: "#ff6666", sfx: "error" });
       return;
     }
 
@@ -166,12 +159,8 @@ export class MainMenuScene extends Phaser.Scene {
       p.currentHP = p.maxHP;
     }
     saveGame(this.gameState);
-
-    const msg = this.add.text(GAME_W / 2, GAME_H / 2, "All Pokemon healed!\n-20g", {
-      fontSize: "16px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold",
-      stroke: "#000000", strokeThickness: 3, align: "center",
-    }).setOrigin(0.5).setDepth(100);
-    this.tweens.add({ targets: msg, alpha: 0, duration: 1500, delay: 800, onComplete: () => { msg.destroy(); this.buildUI(); } });
+    this.buildUI();
+    this.showToast(`All Pokemon healed!  -${cost}g`, { color: "#44ff88", sfx: "heal" });
   }
 
   private showScreen(screen: "roster" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train"): void {
@@ -383,7 +372,7 @@ export class MainMenuScene extends Phaser.Scene {
       const bg = this.add.rectangle(x, y, 64, 26, 0x222244).setOrigin(0.5).setStrokeStyle(1, 0x333355);
       this.add.text(x, y, "BATTLE", { fontSize: "9px", fontFamily: "monospace", color: "#6677aa", fontStyle: "bold" }).setOrigin(0.5);
       bg.setInteractive();
-      bg.on("pointerdown", () => this.showToast("Only usable in battle."));
+      bg.on("pointerdown", () => this.showToast("Only usable in battle.", { color: "#ff8888", sfx: "error" }));
       return;
     }
     if (cat === "tm") {
@@ -391,7 +380,7 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(x, y, "TM", { fontSize: "11px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold" }).setOrigin(0.5);
       bg.setInteractive();
       bg.on("pointerdown", () =>
-        this.showToast("TMs can only be used at the Training Centre.")
+        this.showToast("TMs can only be used at the Training Centre.", { color: "#ffcc88", sfx: "error" })
       );
       return;
     }
@@ -402,21 +391,11 @@ export class MainMenuScene extends Phaser.Scene {
     bg.on("pointerdown", () => this.showItemUseTarget(belt));
   }
 
-  private showToast(message: string): void {
-    const msg = this.add
-      .text(GAME_W / 2, GAME_H - 120, message, {
-        fontSize: "13px", fontFamily: "monospace", color: "#ffdd44", fontStyle: "bold",
-        stroke: "#000000", strokeThickness: 3, align: "center", wordWrap: { width: GAME_W - 40 },
-      })
-      .setOrigin(0.5)
-      .setDepth(200);
-    this.tweens.add({
-      targets: msg,
-      alpha: 0,
-      duration: 1800,
-      delay: 1200,
-      onComplete: () => msg.destroy(),
-    });
+  private showToast(
+    message: string,
+    opts: Parameters<typeof showToast>[2] = {}
+  ): void {
+    showToast(this, message, opts);
   }
 
   /** Predicate: can this item be applied to this pokemon right now? */
@@ -528,6 +507,10 @@ export class MainMenuScene extends Phaser.Scene {
             }
           }
           this.showScreen("items");
+          if (result.kind !== "fail") {
+            const { message, sfx, color } = describeItemResult(result, pokemon);
+            this.showToast(message, { sfx, color });
+          }
         });
       }
     });
@@ -543,6 +526,7 @@ export class MainMenuScene extends Phaser.Scene {
   private showEvolutionAnimation(oldName: string, pokemon: BattlePokemon, onContinue: () => void): void {
     this.children.removeAll(true);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    MusicManager.playSFX("hatch");
 
     this.add.text(GAME_W / 2, GAME_H / 2 - 100, "Congratulations!", {
       fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
@@ -655,6 +639,7 @@ export class MainMenuScene extends Phaser.Scene {
             else this.gameState.playerItems.push({ item: ITEMS[shopItem.itemId], quantity: 1 });
             saveGame(this.gameState);
             this.showScreen("shop");
+            this.showToast(`Bought ${item.name}!  -${shopItem.cost}g`, { sfx: "purchase" });
           });
         }
 
@@ -700,6 +685,7 @@ export class MainMenuScene extends Phaser.Scene {
           this.gameState.roster.push(createBattlePokemon(species, 5));
           saveGame(this.gameState);
           this.showScreen("pokeshop");
+          this.showToast(`${species.name} joined your roster!  -${shopPoke.cost}g`, { sfx: "purchase" });
         });
       }
     });
@@ -765,6 +751,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.gameState.eggs.push(createEgg(tier));
     saveGame(this.gameState);
     this.showScreen("eggshop");
+    this.showToast(`Bought ${tierData.name}!  -${tierData.cost}g`, { sfx: "purchase" });
   }
 
   // --- Party Select ---
@@ -985,6 +972,10 @@ export class MainMenuScene extends Phaser.Scene {
             pokemon.cooldowns.push(0);
             saveGame(this.gameState);
             this.drawTrainMoves(rosterIndex);
+            this.showToast(
+              `${pokemon.species.name} learned ${entry.move.name}!  -${entry.cost}g`,
+              { color: "#88ff88", sfx: "learn" }
+            );
           });
         } else if (!hasMoveSlot) {
           this.add.text(GAME_W - 40, y, "FULL", { fontSize: "9px", fontFamily: "monospace", color: "#886644", fontStyle: "bold" }).setOrigin(0.5);
@@ -1053,6 +1044,7 @@ export class MainMenuScene extends Phaser.Scene {
     evolveIntoSpecies(pokemon, evoInfo.evolvedSpecies);
     saveGame(this.gameState);
 
+    MusicManager.playSFX("purchase");
     this.showEvolutionAnimation(oldName, pokemon, () => this.drawTrainMoves(rosterIndex));
   }
 
@@ -1070,6 +1062,7 @@ export class MainMenuScene extends Phaser.Scene {
       belt.quantity--;
       saveGame(this.gameState);
       this.drawTrainMoves(rosterIndex);
+      this.showToast(`${pokemon.species.name} learned ${move.name}!`, { color: "#ffcc88", sfx: "learn" });
       return;
     }
 
@@ -1110,11 +1103,16 @@ export class MainMenuScene extends Phaser.Scene {
       }).setOrigin(0.5);
       btn.setInteractive();
       btn.on("pointerdown", () => {
+        const forgotten = pokemon.moves[i].name;
         pokemon.moves[i] = newMove;
         pokemon.cooldowns[i] = 0;
         belt.quantity--;
         saveGame(this.gameState);
         this.drawTrainMoves(rosterIndex);
+        this.showToast(
+          `${pokemon.species.name} forgot ${forgotten}\nand learned ${newMove.name}!`,
+          { color: "#ffcc88", sfx: "learn" }
+        );
       });
 
       // Suppress unused variable warning for cardBg

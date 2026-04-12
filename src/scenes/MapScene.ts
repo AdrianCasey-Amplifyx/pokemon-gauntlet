@@ -5,6 +5,8 @@ import { createBattlePokemon, xpToNextLevel } from "../core/statCalc.ts";
 import { applyItem } from "../data/items.ts";
 import { getPokemon } from "../data/pokemon.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
+import { showToast } from "../ui/Toast.ts";
+import { describeItemResult } from "../ui/itemFeedback.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel } from "../data/worlds.ts";
 import { EGG_TIERS, tickEggs, calculateHatchLevel } from "../data/eggs.ts";
@@ -443,6 +445,8 @@ export class MapScene extends Phaser.Scene {
     const darkBg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.88).setOrigin(0.5);
     container.add(darkBg);
 
+    MusicManager.playSFX("hatch");
+
     const title = this.add.text(GAME_W / 2, GAME_H / 2 - 140, `Your ${tierData.name} hatched!`, {
       fontSize: "16px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
     }).setOrigin(0.5);
@@ -772,6 +776,7 @@ export class MapScene extends Phaser.Scene {
             this.revealFullMap();
             modal.destroy(true);
             this.buildMapUI();
+            showToast(this, "Map revealed!", { color: "#88ccff", sfx: "item_use" });
           });
         } else if (belt.item.id === "repel") {
           const useBg = this.add.rectangle(GAME_W / 2 + 140, y, 55, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
@@ -785,6 +790,7 @@ export class MapScene extends Phaser.Scene {
             this.gameState.repelSteps = 20;
             modal.destroy(true);
             this.buildMapUI();
+            showToast(this, "Repel applied — 20 steps", { color: "#cc88ff", sfx: "item_use" });
           });
         } else if (belt.item.id !== "escape_rope") {
           const useBg = this.add.rectangle(GAME_W / 2 + 140, y, 55, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
@@ -912,6 +918,10 @@ export class MapScene extends Phaser.Scene {
           if (result.kind !== "fail") belt.quantity--;
           modal.destroy(true);
           this.buildMapUI();
+          if (result.kind !== "fail") {
+            const fb = describeItemResult(result, pokemon);
+            showToast(this, fb.message, { color: fb.color, sfx: fb.sfx });
+          }
         });
       }
     });

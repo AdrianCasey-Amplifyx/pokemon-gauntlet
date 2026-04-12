@@ -522,7 +522,8 @@ The player picks up to **3 Pokemon** from the roster to form `playerParty` befor
 - **Sprites:** 16×16 pixel art for all 151 Pokemon, each defined as a palette + grid in `src/sprites/pokemonSprites.ts` and rendered to Phaser textures during `PreloadScene`. Nearest-neighbor filtering; no external PNGs.
 - **UI:** monospace text, flat rectangles, type-colored accents (`src/ui/TypeColors.ts` maps all 15 types to hex colors).
 - **Music:** procedural Web Audio via `src/audio/MusicManager.ts`. Distinct loops for map exploration and battles. No audio files.
-- **SFX:** none currently (intentional — all sound comes from procedural music).
+- **SFX:** short one-shot effects also synthesized via `MusicManager.playSFX(kind)`. Current presets: `purchase` (ca-ching B5→E6), `heal` (C-E-G rising chime), `item_use` (short click), `hatch` (C-E-G-C celebration arpeggio, also used for evolution), `learn` (E5→B5 ding), `error` (low A3→E3 descending). Reuses the master gain node of the current music track.
+- **Confirmation toasts:** reusable `src/ui/Toast.ts` shows a fading yellow-by-default message near the bottom of the screen (~1 s hold + 1.8 s fade). Used for every purchase (PokeMart, Buy Pokemon, Egg Shop), every PokeCenter heal, every move learned, every field item use (Map, Repel, medicine/vitamin/stone/rare candy), and every error/denial (not enough gold, "only usable in battle", etc.). Item-apply messages are generated from the `applyItem` result via `src/ui/itemFeedback.ts` so MainMenu and MapScene share the same vocabulary ("Charizard restored 30 HP!", "Pikachu grew to Lv14!", "Eevee's Attack rose by 3!"). Evolution and egg-hatch full-screen overlays also trigger the `hatch` SFX.
 
 ---
 

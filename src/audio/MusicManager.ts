@@ -50,6 +50,60 @@ const BATTLE_BASS: { note: string; dur: number }[] = [
   { note: "E3", dur: 0.2 }, { note: "E3", dur: 0.2 },
 ];
 
+// One-shot sound effects. Each preset is a sequence of notes played in
+// sequence (via `delay` in ms from trigger time) with short envelopes.
+export type SFXKind =
+  | "purchase"
+  | "heal"
+  | "item_use"
+  | "hatch"
+  | "learn"
+  | "error";
+
+interface SFXNote {
+  freq: number;
+  dur: number;
+  delay: number;
+  wave: OscillatorType;
+  vol: number;
+}
+
+const SFX_PRESETS: Record<SFXKind, SFXNote[]> = {
+  // Cash-register "ca-ching": two rising square blips
+  purchase: [
+    { freq: 987.77, dur: 0.08, delay: 0, wave: "square", vol: 0.22 },   // B5
+    { freq: 1318.51, dur: 0.14, delay: 90, wave: "square", vol: 0.20 }, // E6
+  ],
+  // Rising C-E-G arpeggio
+  heal: [
+    { freq: 523.25, dur: 0.09, delay: 0, wave: "triangle", vol: 0.22 }, // C5
+    { freq: 659.25, dur: 0.09, delay: 80, wave: "triangle", vol: 0.22 },// E5
+    { freq: 783.99, dur: 0.16, delay: 160, wave: "triangle", vol: 0.22 },// G5
+  ],
+  // Short click-blip for generic item use
+  item_use: [
+    { freq: 880.0, dur: 0.05, delay: 0, wave: "triangle", vol: 0.18 },
+    { freq: 1174.66, dur: 0.07, delay: 50, wave: "triangle", vol: 0.16 },
+  ],
+  // Celebratory major arpeggio for egg hatch
+  hatch: [
+    { freq: 523.25, dur: 0.1, delay: 0, wave: "triangle", vol: 0.22 },
+    { freq: 659.25, dur: 0.1, delay: 100, wave: "triangle", vol: 0.22 },
+    { freq: 783.99, dur: 0.1, delay: 200, wave: "triangle", vol: 0.22 },
+    { freq: 1046.5, dur: 0.22, delay: 300, wave: "triangle", vol: 0.24 },
+  ],
+  // Rising "ding" for learning a move
+  learn: [
+    { freq: 659.25, dur: 0.08, delay: 0, wave: "square", vol: 0.18 },
+    { freq: 987.77, dur: 0.14, delay: 80, wave: "square", vol: 0.18 },
+  ],
+  // Low descending pair for errors / denials
+  error: [
+    { freq: 220, dur: 0.12, delay: 0, wave: "sawtooth", vol: 0.16 },
+    { freq: 165, dur: 0.18, delay: 80, wave: "sawtooth", vol: 0.14 },
+  ],
+};
+
 class MusicManagerClass {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
@@ -148,6 +202,37 @@ class MusicManagerClass {
 
   isStarted(): boolean {
     return this.started;
+  }
+
+  /** Play a short one-shot sound effect over the current track. */
+  playSFX(kind: SFXKind): void {
+    const ctx = this.ensureContext();
+    if (!this.masterGain) return;
+    const preset = SFX_PRESETS[kind];
+    for (const note of preset) {
+      this.playOneShot(ctx, note);
+    }
+  }
+
+  private playOneShot(ctx: AudioContext, note: SFXNote): void {
+    if (!this.masterGain) return;
+    const start = ctx.currentTime + note.delay / 1000;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = note.wave;
+    osc.frequency.value = note.freq;
+
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(note.vol, start + 0.008);
+    gain.gain.linearRampToValueAtTime(note.vol * 0.7, start + note.dur * 0.6);
+    gain.gain.linearRampToValueAtTime(0, start + note.dur);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(start);
+    osc.stop(start + note.dur + 0.02);
   }
 }
 

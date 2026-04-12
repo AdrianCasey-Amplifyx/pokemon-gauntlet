@@ -60,10 +60,12 @@ src/
     MoveButton.ts            # Move button with cooldown overlay
     BattleHUD.ts             # Full battle screen layout
     TypeColors.ts            # PokemonType -> hex color map (15 types)
+    Toast.ts                 # Reusable fading-text confirmation toast (+ optional SFX)
+    itemFeedback.ts          # ApplyResult -> {message, sfx, color} helper shared by MainMenu and MapScene
   sprites/
     pokemonSprites.ts        # 151 pixel art sprites as palette + grid data
   audio/
-    MusicManager.ts          # Procedural map/battle music via Web Audio API
+    MusicManager.ts          # Procedural map/battle music + short one-shot SFX presets (playSFX) via Web Audio API
   utils/
     random.ts                # RNG helpers
 tests/
