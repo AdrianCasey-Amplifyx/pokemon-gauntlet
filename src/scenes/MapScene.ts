@@ -635,8 +635,9 @@ export class MapScene extends Phaser.Scene {
     }).setOrigin(0.5));
 
     const items = this.gameState.playerItems.filter((b) => b.quantity > 0);
+    const eggs = this.gameState.eggs;
 
-    if (items.length === 0) {
+    if (items.length === 0 && eggs.length === 0) {
       modal.add(this.add.text(GAME_W / 2, GAME_H / 2, "No items!", {
         fontSize: "16px", fontFamily: "monospace", color: "#888888",
       }).setOrigin(0.5));
@@ -695,6 +696,63 @@ export class MapScene extends Phaser.Scene {
           });
         }
       });
+
+      // Eggs section — show egg progress mid-dungeon, same card style as the
+      // town Items view. Eggs tick here so it's critical they're visible.
+      if (eggs.length > 0) {
+        const headerY = 110 + items.length * 70 + 14;
+
+        modal.add(this.add.rectangle(GAME_W / 2, headerY - 8, 300, 1, 0x445566));
+        modal.add(this.add.text(GAME_W / 2, headerY + 6, `EGGS (${eggs.length})`, {
+          fontSize: "13px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold",
+        }).setOrigin(0.5));
+
+        eggs.forEach((egg, i) => {
+          const y = headerY + 32 + i * 58;
+          if (y + 25 > GAME_H - 95) return; // stay above CLOSE button
+
+          const tierData = EGG_TIERS[egg.tier];
+          const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
+
+          // Card
+          modal.add(this.add.rectangle(GAME_W / 2, y, 340, 50, 0x1a1a2e, 0.9).setOrigin(0.5).setStrokeStyle(2, tierData.color));
+
+          // Egg sprite
+          if (this.textures.exists(tierData.spriteKey)) {
+            const img = this.add.image(GAME_W / 2 - 150, y, tierData.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
+            img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+            modal.add(img);
+          }
+
+          // Name
+          modal.add(this.add.text(GAME_W / 2 - 125, y - 12, tierData.name, {
+            fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+          }).setOrigin(0, 0.5));
+
+          // Steps walked / total, right-aligned
+          modal.add(this.add.text(GAME_W / 2 + 160, y - 12, `${stepsTaken} / ${tierData.stepsToHatch}`, {
+            fontSize: "11px", fontFamily: "monospace", color: "#aaccff", fontStyle: "bold",
+          }).setOrigin(1, 0.5));
+
+          // Flavor line
+          const flavor = egg.stepsRemaining === 0 ? "Ready to hatch!" : "Hatching as you walk";
+          modal.add(this.add.text(GAME_W / 2 - 125, y + 5, flavor, {
+            fontSize: "9px", fontFamily: "monospace",
+            color: egg.stepsRemaining === 0 ? "#44ff88" : "#888899",
+          }).setOrigin(0, 0.5));
+
+          // Progress bar
+          const barX = GAME_W / 2 - 125;
+          const barY = y + 17;
+          const barW = 280;
+          const barH = 5;
+          modal.add(this.add.rectangle(barX + barW / 2, barY, barW, barH, 0x222233).setOrigin(0.5));
+          const pct = Math.max(0, Math.min(1, stepsTaken / tierData.stepsToHatch));
+          if (pct > 0) {
+            modal.add(this.add.rectangle(barX, barY - barH / 2, barW * pct, barH, tierData.color).setOrigin(0, 0));
+          }
+        });
+      }
     }
 
     // CANCEL button
