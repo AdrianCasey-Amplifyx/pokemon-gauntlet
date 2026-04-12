@@ -1,0 +1,676 @@
+import Phaser from "phaser";
+import type { GameState, BattlePokemon, Direction } from "../types.ts";
+import { revealTilesAround } from "../core/fogOfWar.ts";
+import { createBattlePokemon, xpToNextLevel } from "../core/statCalc.ts";
+import { applyItem } from "../data/items.ts";
+import { getPokemon } from "../data/pokemon.ts";
+import { MusicManager } from "../audio/MusicManager.ts";
+import { saveGame } from "../core/saveManager.ts";
+import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel } from "../data/worlds.ts";
+
+const GAME_W = 390;
+const GAME_H = 844;
+
+export class MapScene extends Phaser.Scene {
+  private gameState!: GameState;
+  private tileRects: Phaser.GameObjects.Rectangle[][] = [];
+  private fogRects: Phaser.GameObjects.Rectangle[][] = [];
+  private playerToken!: Phaser.GameObjects.Container;
+  private isMoving = false;
+  private gridSize = 15;
+  private tileSize = 22;
+  private gridOffsetX = 0;
+  private gridOffsetY = 0;
+  private repelText: Phaser.GameObjects.Text | null = null;
+  private repelBar: Phaser.GameObjects.Rectangle | null = null;
+  private repelBarBg: Phaser.GameObjects.Rectangle | null = null;
+  private bossDefeated = false;
+
+  constructor() {
+    super({ key: "MapScene" });
+  }
+
+  create(): void {
+    this.tileRects = [];
+    this.fogRects = [];
+    this.isMoving = false;
+
+    const battleResult = this.registry.get("battleResult") as string | undefined;
+    if (battleResult) this.registry.remove("battleResult");
+
+    // Check if we just won a boss battle
+    const bossWon = this.registry.get("bossDefeated") as boolean | undefined;
+    if (bossWon) {
+      this.registry.remove("bossDefeated");
+      this.bossDefeated = true;
+    } else {
+      this.bossDefeated = false;
+    }
+
+    this.gameState = this.registry.get("gameState") as GameState;
+    if (!this.gameState || !this.gameState.currentMap) {
+      this.scene.start("MainMenuScene");
+      return;
+    }
+
+    const alive = this.gameState.playerParty.some((p) => p.currentHP > 0);
+    if (!alive) {
+      this.scene.start("MainMenuScene");
+      return;
+    }
+
+    for (const p of this.gameState.playerParty) {
+      p.cooldowns = p.cooldowns.map(() => 0);
+    }
+
+    // Layout calculations
+    const map = this.gameState.currentMap;
+    this.gridSize = map.width;
+
+    // Grid fills full width with padding
+    const gridPad = 10;
+    this.tileSize = Math.floor((GAME_W - gridPad * 2) / this.gridSize);
+    const gridPixels = this.tileSize * this.gridSize;
+    this.gridOffsetX = Math.floor((GAME_W - gridPixels) / 2);
+    this.gridOffsetY = 115; // below header + party strip
+
+    this.buildMapUI();
+    MusicManager.play("map");
+  }
+
+  private buildMapUI(): void {
+    this.children.removeAll(true);
+    this.tileRects = [];
+    this.fogRects = [];
+
+    const map = this.gameState.currentMap!;
+
+    // === HEADER (y: 0-40) ===
+    this.add.text(GAME_W / 2, 14, WORLD_NAMES[map.worldIndex], {
+      fontSize: "14px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 32, `Room ${map.mapIndex + 1}/${MAPS_PER_WORLD}  |  Gold: ${this.gameState.gold}`, {
+      fontSize: "10px", fontFamily: "monospace", color: "#ffd700",
+    }).setOrigin(0.5);
+
+    // === PARTY STRIP (y: 45-110) — horizontal cards ===
+    this.drawPartyStrip();
+
+    // === REPEL INDICATOR ===
+    this.drawRepelIndicator();
+
+    // === GRID (y: gridOffsetY) ===
+    revealTilesAround(map, this.gameState.playerX, this.gameState.playerY, 1);
+
+    for (let row = 0; row < map.height; row++) {
+      this.tileRects[row] = [];
+      this.fogRects[row] = [];
+      for (let col = 0; col < map.width; col++) {
+        const x = this.gridOffsetX + col * this.tileSize;
+        const y = this.gridOffsetY + row * this.tileSize;
+        const tile = map.tiles[row][col];
+
+        let tileColor = 0x2a2a3e;
+        if (tile.type === "wall") tileColor = 0x12121e;
+        else if (tile.type === "exit") tileColor = isBossRoom(map.mapIndex) && !this.bossDefeated ? 0x5a2a2a : 0x2a5a2a;
+
+        this.tileRects[row][col] = this.add
+          .rectangle(x, y, this.tileSize - 1, this.tileSize - 1, tileColor).setOrigin(0, 0);
+
+        // Gold sparkle on tiles with gold
+        if (tile.type === "floor" && tile.goldDrop > 0 && tile.revealed) {
+          this.add.text(x + this.tileSize / 2, y + this.tileSize / 2, "$", {
+            fontSize: `${Math.max(8, this.tileSize - 8)}px`, fontFamily: "monospace", color: "#ffd700",
+          }).setOrigin(0.5).setDepth(4).setAlpha(0.7);
+        }
+
+        if (tile.type === "exit" && tile.revealed && tile.exitDirection) {
+          const isBoss = isBossRoom(map.mapIndex) && !this.bossDefeated;
+          const arrows: Record<Direction, string> = { up: "^", down: "v", left: "<", right: ">" };
+          const exitLabel = isBoss ? "!" : arrows[tile.exitDirection];
+          const exitColor = isBoss ? "#ff4444" : "#88ff88";
+          this.add.text(x + this.tileSize / 2, y + this.tileSize / 2, exitLabel, {
+            fontSize: `${Math.max(10, this.tileSize - 4)}px`, fontFamily: "monospace", color: exitColor, fontStyle: "bold",
+          }).setOrigin(0.5).setDepth(5);
+        }
+
+        const fogAlpha = tile.revealed ? (tile.visited ? 0 : 0.4) : 0.95;
+        this.fogRects[row][col] = this.add
+          .rectangle(x, y, this.tileSize - 1, this.tileSize - 1, 0x08080e).setOrigin(0, 0).setAlpha(fogAlpha);
+      }
+    }
+
+    this.playerToken = this.createPlayerToken(this.gameState.playerX, this.gameState.playerY);
+
+    // === BOTTOM CONTROLS (anchored to bottom of canvas) ===
+    const bottomY = GAME_H;
+
+    // D-pad centered, above buttons
+    const dpadCy = bottomY - 115;
+    const dpadCx = GAME_W / 2;
+    this.createDPad(dpadCx, dpadCy);
+
+    // Items + Escape buttons at very bottom
+    const btnRow = bottomY - 30;
+    this.createBottomButton(GAME_W / 2 - 70, btnRow, "ITEMS", 0x885533, () => this.showItemModal());
+    this.createBottomButton(GAME_W / 2 + 70, btnRow, "ESCAPE", 0x553333, () => this.useEscapeRope());
+
+    // Tap-to-move
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      const col = Math.floor((pointer.x - this.gridOffsetX) / this.tileSize);
+      const row = Math.floor((pointer.y - this.gridOffsetY) / this.tileSize);
+      if (row < 0 || row >= this.gridSize || col < 0 || col >= this.gridSize) return;
+      const dx = col - this.gameState.playerX;
+      const dy = row - this.gameState.playerY;
+      if (Math.abs(dx) + Math.abs(dy) === 1) {
+        if (dx === 1) this.tryMove("right");
+        else if (dx === -1) this.tryMove("left");
+        else if (dy === 1) this.tryMove("down");
+        else if (dy === -1) this.tryMove("up");
+      }
+    });
+  }
+
+  // === PARTY STRIP — horizontal row of mini cards ===
+  private drawPartyStrip(): void {
+    const party = this.gameState.playerParty;
+    const cardW = Math.min(120, (GAME_W - 20) / party.length - 4);
+    const cardH = 58;
+    const startX = Math.floor((GAME_W - (cardW + 4) * party.length) / 2);
+    const y = 48;
+
+    party.forEach((pokemon, i) => {
+      const x = startX + i * (cardW + 4);
+      const fainted = pokemon.currentHP <= 0;
+
+      // Card bg
+      this.add.rectangle(x + cardW / 2, y + cardH / 2, cardW, cardH, fainted ? 0x1a1111 : 0x1a1a2e)
+        .setOrigin(0.5).setStrokeStyle(1, fainted ? 0x442222 : 0x333355);
+
+      // Sprite
+      const spriteKey = pokemon.species.spriteKey;
+      if (this.textures.exists(spriteKey)) {
+        const img = this.add.image(x + 18, y + cardH / 2, spriteKey)
+          .setDisplaySize(26, 26).setOrigin(0.5).setAlpha(fainted ? 0.3 : 1);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+
+      // Name + Level
+      this.add.text(x + 34, y + 6, pokemon.species.name, {
+        fontSize: "8px", fontFamily: "monospace", color: fainted ? "#666666" : "#ffffff", fontStyle: "bold",
+      });
+      this.add.text(x + cardW - 3, y + 6, `${pokemon.level}`, {
+        fontSize: "8px", fontFamily: "monospace", color: "#aaaaaa",
+      }).setOrigin(1, 0);
+
+      // HP bar
+      const barX = x + 34;
+      const barY = y + 20;
+      const barW = cardW - 40;
+      this.add.rectangle(barX + barW / 2, barY + 2, barW, 4, 0x333333).setOrigin(0.5);
+      if (!fainted) {
+        const pct = Math.max(0, pokemon.currentHP / pokemon.maxHP);
+        const color = pct > 0.5 ? 0x22cc44 : pct > 0.25 ? 0xddcc22 : 0xcc2222;
+        if (pct > 0) this.add.rectangle(barX, barY, pct * barW, 4, color).setOrigin(0, 0);
+      }
+      this.add.text(barX, barY + 6, fainted ? "FNT" : `${pokemon.currentHP}/${pokemon.maxHP}`, {
+        fontSize: "6px", fontFamily: "monospace", color: fainted ? "#cc4444" : "#888888",
+      });
+
+      // XP bar
+      const xpY = barY + 14;
+      const needed = xpToNextLevel(pokemon.level);
+      const xpPct = Math.min(pokemon.currentXP / needed, 1);
+      this.add.rectangle(barX + barW / 2, xpY + 2, barW, 3, 0x222244).setOrigin(0.5);
+      if (xpPct > 0) this.add.rectangle(barX, xpY, xpPct * barW, 3, 0x4488cc).setOrigin(0, 0);
+    });
+  }
+
+  // === REPEL INDICATOR ===
+  private drawRepelIndicator(): void {
+    const steps = this.gameState.repelSteps;
+    if (steps <= 0) {
+      this.repelText = null;
+      this.repelBar = null;
+      this.repelBarBg = null;
+      return;
+    }
+    const y = 110;
+    const barW = 120;
+    const pct = Math.min(steps / 20, 1);
+    this.repelBarBg = this.add.rectangle(GAME_W / 2, y, barW, 6, 0x222233).setOrigin(0.5).setDepth(15);
+    this.repelBar = this.add.rectangle(GAME_W / 2 - barW / 2, y, pct * barW, 6, 0x44bbaa).setOrigin(0, 0.5).setDepth(15);
+    this.repelText = this.add.text(GAME_W / 2 + barW / 2 + 8, y, `${steps}`, {
+      fontSize: "9px", fontFamily: "monospace", color: "#44bbaa", fontStyle: "bold",
+    }).setOrigin(0, 0.5).setDepth(15);
+  }
+
+  private updateRepelUI(): void {
+    const steps = this.gameState.repelSteps;
+    if (steps <= 0) {
+      this.repelText?.destroy();
+      this.repelBar?.destroy();
+      this.repelBarBg?.destroy();
+      this.repelText = null;
+      this.repelBar = null;
+      this.repelBarBg = null;
+      return;
+    }
+    const barW = 120;
+    const pct = Math.min(steps / 20, 1);
+    if (this.repelBar) {
+      this.repelBar.width = pct * barW;
+    }
+    if (this.repelText) {
+      this.repelText.setText(`${steps}`);
+    }
+  }
+
+  // === PLAYER TOKEN ===
+  private createPlayerToken(col: number, row: number): Phaser.GameObjects.Container {
+    const x = this.gridOffsetX + col * this.tileSize + this.tileSize / 2;
+    const y = this.gridOffsetY + row * this.tileSize + this.tileSize / 2;
+    const container = this.add.container(x, y).setDepth(10);
+
+    const lead = this.gameState.playerParty.find((p) => p.currentHP > 0);
+    const spriteKey = lead?.species.spriteKey;
+    const tokenSize = Math.min(this.tileSize - 2, 24);
+
+    if (spriteKey && this.textures.exists(spriteKey)) {
+      const img = this.add.image(0, 0, spriteKey).setDisplaySize(tokenSize, tokenSize).setOrigin(0.5);
+      img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      container.add(img);
+    } else {
+      container.add(this.add.circle(0, 0, tokenSize / 2, 0xf8d030).setStrokeStyle(2, 0xffffff));
+    }
+
+    container.add(this.add.circle(0, 0, tokenSize / 2 + 2).setStrokeStyle(1, 0xf8d030, 0.5).setFillStyle(0x000000, 0));
+    return container;
+  }
+
+  // === D-PAD ===
+  private createDPad(cx: number, cy: number): void {
+    const size = 48;
+    const gap = 52;
+    const dirs: { dir: Direction; dx: number; dy: number; label: string }[] = [
+      { dir: "up", dx: 0, dy: -gap, label: "^" },
+      { dir: "down", dx: 0, dy: gap, label: "v" },
+      { dir: "left", dx: -gap, dy: 0, label: "<" },
+      { dir: "right", dx: gap, dy: 0, label: ">" },
+    ];
+    for (const { dir, dx, dy, label } of dirs) {
+      const btn = this.add.container(cx + dx, cy + dy);
+      btn.add(this.add.rectangle(0, 0, size, size, 0x333355).setOrigin(0.5).setStrokeStyle(2, 0x555577));
+      btn.add(this.add.text(0, 0, label, { fontSize: "20px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
+      btn.setSize(size, size).setInteractive();
+      btn.on("pointerdown", () => this.tryMove(dir));
+    }
+    this.add.circle(cx, cy, 6, 0x222244).setStrokeStyle(1, 0x444466);
+  }
+
+  // === BOTTOM BUTTONS ===
+  private createBottomButton(cx: number, cy: number, label: string, color: number, onClick: () => void): void {
+    const btn = this.add.container(cx, cy);
+    btn.add(this.add.rectangle(0, 0, 120, 36, color).setOrigin(0.5).setStrokeStyle(1, 0x666666));
+    btn.add(this.add.text(0, 0, label, { fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
+    btn.setSize(120, 36).setInteractive();
+    btn.on("pointerdown", onClick);
+  }
+
+  private useEscapeRope(): void {
+    const rope = this.gameState.playerItems.find((b) => b.item.id === "escape_rope" && b.quantity > 0);
+    if (rope) {
+      rope.quantity--;
+      saveGame(this.gameState);
+      this.scene.start("MainMenuScene");
+    }
+  }
+
+  // === MOVEMENT ===
+  private tryMove(dir: Direction): void {
+    if (this.isMoving) return;
+
+    const dx = dir === "left" ? -1 : dir === "right" ? 1 : 0;
+    const dy = dir === "up" ? -1 : dir === "down" ? 1 : 0;
+    const nx = this.gameState.playerX + dx;
+    const ny = this.gameState.playerY + dy;
+
+    if (nx < 0 || nx >= this.gridSize || ny < 0 || ny >= this.gridSize) return;
+    const tile = this.gameState.currentMap!.tiles[ny][nx];
+    if (tile.type === "wall") return;
+
+    this.isMoving = true;
+    this.gameState.playerX = nx;
+    this.gameState.playerY = ny;
+
+    const targetX = this.gridOffsetX + nx * this.tileSize + this.tileSize / 2;
+    const targetY = this.gridOffsetY + ny * this.tileSize + this.tileSize / 2;
+
+    this.tweens.add({
+      targets: this.playerToken, x: targetX, y: targetY,
+      duration: 80, ease: "Power1",
+      onComplete: () => {
+        revealTilesAround(this.gameState.currentMap!, nx, ny, 1);
+        this.refreshFog();
+
+        // Gold pickup
+        if (tile.goldDrop > 0) {
+          this.gameState.gold += tile.goldDrop;
+          const floater = this.add.text(targetX, targetY - 12, `+${tile.goldDrop}g`, {
+            fontSize: "11px", fontFamily: "monospace", color: "#ffd700", fontStyle: "bold",
+            stroke: "#000000", strokeThickness: 2,
+          }).setOrigin(0.5).setDepth(100);
+          this.tweens.add({ targets: floater, y: targetY - 35, alpha: 0, duration: 500, onComplete: () => floater.destroy() });
+          tile.goldDrop = 0;
+        }
+
+        if (tile.type === "exit") {
+          const map = this.gameState.currentMap!;
+          if (isBossRoom(map.mapIndex) && !this.bossDefeated) {
+            this.triggerBossBattle();
+            return;
+          }
+          this.completeMap();
+          return;
+        }
+
+        // Repel step tracking
+        if (this.gameState.repelSteps > 0) {
+          this.gameState.repelSteps--;
+          this.updateRepelUI();
+          if (this.gameState.repelSteps === 0) {
+            const worn = this.add.text(GAME_W / 2, this.gridOffsetY - 5, "Repel wore off!", {
+              fontSize: "11px", fontFamily: "monospace", color: "#cc8844", fontStyle: "bold",
+              stroke: "#000000", strokeThickness: 2,
+            }).setOrigin(0.5).setDepth(100);
+            this.tweens.add({ targets: worn, y: worn.y - 20, alpha: 0, duration: 1200, onComplete: () => worn.destroy() });
+          }
+        }
+
+        if (this.gameState.repelSteps <= 0 && tile.encounterChance > 0 && Math.random() < tile.encounterChance) {
+          tile.encounterChance = 0;
+          this.triggerBattle();
+          return;
+        }
+        this.isMoving = false;
+      },
+    });
+  }
+
+  private revealFullMap(): void {
+    const map = this.gameState.currentMap!;
+    for (let row = 0; row < map.height; row++) {
+      for (let col = 0; col < map.width; col++) {
+        map.tiles[row][col].revealed = true;
+      }
+    }
+  }
+
+  private refreshFog(): void {
+    const map = this.gameState.currentMap!;
+    for (let row = 0; row < map.height; row++) {
+      for (let col = 0; col < map.width; col++) {
+        const tile = map.tiles[row][col];
+        if (tile.revealed) {
+          this.fogRects[row][col].setAlpha(tile.visited ? 0 : 0.35);
+        }
+      }
+    }
+  }
+
+  // === MAP COMPLETION ===
+  private completeMap(): void {
+    const worldIdx = this.gameState.activeWorld;
+    const world = this.gameState.worlds[worldIdx];
+    world.currentMap++;
+
+    if (world.currentMap >= MAPS_PER_WORLD && worldIdx + 1 < this.gameState.worlds.length) {
+      this.gameState.worlds[worldIdx + 1].unlocked = true;
+    }
+
+    this.gameState.currentMap = null;
+    this.registry.set("roomCleared", true);
+    saveGame(this.gameState);
+
+    const msg = world.currentMap >= MAPS_PER_WORLD
+      ? `World Complete!\nNext world unlocked!`
+      : `Room ${world.currentMap}/${MAPS_PER_WORLD} cleared!`;
+
+    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5).setDepth(200).setAlpha(0);
+    const text = this.add.text(GAME_W / 2, GAME_H / 2 - 20, msg, {
+      fontSize: "20px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold", align: "center",
+    }).setOrigin(0.5).setDepth(201).setAlpha(0);
+    const tapText = this.add.text(GAME_W / 2, GAME_H / 2 + 40, "Tap to continue", {
+      fontSize: "14px", fontFamily: "monospace", color: "#cccccc",
+    }).setOrigin(0.5).setDepth(201).setAlpha(0);
+
+    this.tweens.add({ targets: [overlay, text, tapText], alpha: 1, duration: 500 });
+    overlay.setInteractive();
+    overlay.once("pointerdown", () => this.scene.start("MainMenuScene"));
+  }
+
+  // === BATTLE TRIGGER ===
+  private triggerBattle(): void {
+    MusicManager.stop();
+    const map = this.gameState.currentMap!;
+    const level = getEncounterLevel(map.worldIndex, map.mapIndex);
+    const partySize = getEnemyPartySize(map.worldIndex, map.mapIndex);
+    const enemyParty: BattlePokemon[] = [];
+    for (let i = 0; i < partySize; i++) {
+      const speciesId = getRandomEncounterSpecies(map.worldIndex);
+      try {
+        enemyParty.push(createBattlePokemon(getPokemon(speciesId), level));
+      } catch {
+        enemyParty.push(createBattlePokemon(getPokemon("rattata"), level));
+      }
+    }
+
+    this.registry.set("gameState", this.gameState);
+    this.registry.set("enemyParty", enemyParty);
+
+    // Battle transition
+    this.isMoving = true;
+    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff).setOrigin(0.5).setDepth(300).setAlpha(0);
+    const bars: Phaser.GameObjects.Rectangle[] = [];
+    for (let i = 0; i < 8; i++) {
+      bars.push(this.add.rectangle(-GAME_W, (GAME_H / 8) * i + GAME_H / 16, GAME_W * 2, GAME_H / 8 + 2, 0x000000).setOrigin(0.5).setDepth(301).setAlpha(0));
+    }
+    const battleText = this.add.text(GAME_W / 2, GAME_H / 2, "Wild Pokemon!", {
+      fontSize: "22px", fontFamily: "monospace", color: "#ff4444", fontStyle: "bold", stroke: "#000000", strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(302).setAlpha(0);
+
+    this.tweens.add({ targets: flash, alpha: 1, duration: 150, yoyo: true, repeat: 1 });
+    bars.forEach((bar, i) => this.tweens.add({ targets: bar, x: GAME_W / 2, alpha: 1, duration: 200, delay: 300 + i * 40, ease: "Power2" }));
+    this.tweens.add({ targets: battleText, alpha: 1, duration: 200, delay: 650 });
+    this.time.delayedCall(1200, () => this.scene.start("BattleScene"));
+  }
+
+  // === BOSS BATTLE ===
+  private triggerBossBattle(): void {
+    MusicManager.stop();
+    const map = this.gameState.currentMap!;
+    const bossSpeciesId = getBossSpecies(map.worldIndex);
+    const bossLevel = getBossLevel(map.worldIndex, map.mapIndex);
+
+    let bossPokemon: BattlePokemon;
+    try {
+      bossPokemon = createBattlePokemon(getPokemon(bossSpeciesId), bossLevel);
+    } catch {
+      bossPokemon = createBattlePokemon(getPokemon("snorlax"), bossLevel);
+    }
+
+    this.registry.set("gameState", this.gameState);
+    this.registry.set("enemyParty", [bossPokemon]);
+    this.registry.set("isBossBattle", true);
+
+    // Boss battle transition — red-tinted, more dramatic
+    this.isMoving = true;
+    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff2222).setOrigin(0.5).setDepth(300).setAlpha(0);
+    const bars: Phaser.GameObjects.Rectangle[] = [];
+    for (let i = 0; i < 8; i++) {
+      bars.push(this.add.rectangle(-GAME_W, (GAME_H / 8) * i + GAME_H / 16, GAME_W * 2, GAME_H / 8 + 2, 0x220000).setOrigin(0.5).setDepth(301).setAlpha(0));
+    }
+    const battleText = this.add.text(GAME_W / 2, GAME_H / 2, "BOSS BATTLE!", {
+      fontSize: "26px", fontFamily: "monospace", color: "#ff4444", fontStyle: "bold", stroke: "#000000", strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(302).setAlpha(0);
+
+    this.tweens.add({ targets: flash, alpha: 1, duration: 200, yoyo: true, repeat: 2 });
+    bars.forEach((bar, i) => this.tweens.add({ targets: bar, x: GAME_W / 2, alpha: 1, duration: 200, delay: 400 + i * 50, ease: "Power2" }));
+    this.tweens.add({ targets: battleText, alpha: 1, duration: 200, delay: 800 });
+    this.time.delayedCall(1500, () => this.scene.start("BattleScene"));
+  }
+
+  // === ITEMS MODAL ===
+  private showItemModal(): void {
+    // Full screen modal overlay
+    const modal = this.add.container(0, 0).setDepth(200);
+
+    // Background blocks all input below
+    const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.9).setOrigin(0.5);
+    bg.setInteractive(); // block clicks through
+    modal.add(bg);
+
+    modal.add(this.add.text(GAME_W / 2, 50, "ITEMS", {
+      fontSize: "22px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5));
+
+    const items = this.gameState.playerItems.filter((b) => b.quantity > 0);
+
+    if (items.length === 0) {
+      modal.add(this.add.text(GAME_W / 2, GAME_H / 2, "No items!", {
+        fontSize: "16px", fontFamily: "monospace", color: "#888888",
+      }).setOrigin(0.5));
+    } else {
+      items.forEach((belt, i) => {
+        const y = 110 + i * 70;
+        const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 55, 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
+        modal.add(cardBg);
+
+        const icon = this.getItemIcon(belt.item.id);
+        modal.add(this.add.text(GAME_W / 2 - 155, y, icon, { fontSize: "20px", fontFamily: "monospace" }).setOrigin(0.5));
+        modal.add(this.add.text(GAME_W / 2 - 130, y - 10, `${belt.item.name}  x${belt.quantity}`, {
+          fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        }).setOrigin(0, 0.5));
+        modal.add(this.add.text(GAME_W / 2 - 130, y + 10, belt.item.description, {
+          fontSize: "9px", fontFamily: "monospace", color: "#888888",
+        }).setOrigin(0, 0.5));
+
+        // USE button — repel/map use instantly, healing items pick a target
+        if (belt.item.id === "dungeon_map") {
+          const useBg = this.add.rectangle(GAME_W / 2 + 140, y, 55, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
+          modal.add(useBg);
+          modal.add(this.add.text(GAME_W / 2 + 140, y, "USE", {
+            fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+          }).setOrigin(0.5));
+          useBg.setInteractive();
+          useBg.on("pointerdown", () => {
+            belt.quantity--;
+            this.revealFullMap();
+            modal.destroy(true);
+            this.buildMapUI();
+          });
+        } else if (belt.item.id === "repel") {
+          const useBg = this.add.rectangle(GAME_W / 2 + 140, y, 55, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
+          modal.add(useBg);
+          modal.add(this.add.text(GAME_W / 2 + 140, y, "USE", {
+            fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+          }).setOrigin(0.5));
+          useBg.setInteractive();
+          useBg.on("pointerdown", () => {
+            belt.quantity--;
+            this.gameState.repelSteps = 20;
+            modal.destroy(true);
+            this.buildMapUI();
+          });
+        } else if (belt.item.id !== "escape_rope") {
+          const useBg = this.add.rectangle(GAME_W / 2 + 140, y, 55, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
+          modal.add(useBg);
+          modal.add(this.add.text(GAME_W / 2 + 140, y, "USE", {
+            fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+          }).setOrigin(0.5));
+          useBg.setInteractive();
+          useBg.on("pointerdown", () => {
+            modal.destroy(true);
+            this.showItemTargetModal(belt);
+          });
+        }
+      });
+    }
+
+    // CANCEL button
+    const cancelBg = this.add.rectangle(GAME_W / 2, GAME_H - 60, 180, 44, 0x553333).setOrigin(0.5).setStrokeStyle(2, 0x774444);
+    modal.add(cancelBg);
+    modal.add(this.add.text(GAME_W / 2, GAME_H - 60, "CLOSE", {
+      fontSize: "16px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5));
+    cancelBg.setInteractive();
+    cancelBg.on("pointerdown", () => modal.destroy(true));
+  }
+
+  private showItemTargetModal(belt: typeof this.gameState.playerItems[0]): void {
+    const modal = this.add.container(0, 0).setDepth(200);
+    const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.9).setOrigin(0.5);
+    bg.setInteractive();
+    modal.add(bg);
+
+    const isRevive = belt.item.id === "revive";
+    modal.add(this.add.text(GAME_W / 2, 50, `Use ${belt.item.name} on?`, {
+      fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5));
+
+    this.gameState.playerParty.forEach((pokemon, i) => {
+      const y = 120 + i * 80;
+      const fainted = pokemon.currentHP <= 0;
+      const fullHP = pokemon.currentHP >= pokemon.maxHP;
+      const canTarget = isRevive ? fainted : (!fainted && !fullHP);
+
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 60, canTarget ? 0x222244 : 0x181822, 0.9)
+        .setOrigin(0.5).setStrokeStyle(1, canTarget ? 0x444466 : 0x222233);
+      modal.add(cardBg);
+
+      if (this.textures.exists(pokemon.species.spriteKey)) {
+        const img = this.add.image(GAME_W / 2 - 130, y, pokemon.species.spriteKey)
+          .setDisplaySize(36, 36).setOrigin(0.5).setAlpha(canTarget ? 1 : 0.3);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        modal.add(img);
+      }
+
+      modal.add(this.add.text(GAME_W / 2 - 95, y - 10, pokemon.species.name, {
+        fontSize: "13px", fontFamily: "monospace", color: canTarget ? "#ffffff" : "#555555", fontStyle: "bold",
+      }).setOrigin(0, 0.5));
+      modal.add(this.add.text(GAME_W / 2 - 95, y + 10, fainted ? "FAINTED" : `HP: ${pokemon.currentHP}/${pokemon.maxHP}`, {
+        fontSize: "10px", fontFamily: "monospace", color: fainted ? "#cc4444" : "#22cc44",
+      }).setOrigin(0, 0.5));
+
+      if (canTarget) {
+        cardBg.setInteractive();
+        cardBg.on("pointerdown", () => {
+          const { success } = applyItem(belt.item.id, pokemon);
+          if (success) belt.quantity--;
+          modal.destroy(true);
+          this.buildMapUI();
+        });
+      }
+    });
+
+    const cancelBg = this.add.rectangle(GAME_W / 2, GAME_H - 60, 180, 44, 0x553333).setOrigin(0.5).setStrokeStyle(2, 0x774444);
+    modal.add(cancelBg);
+    modal.add(this.add.text(GAME_W / 2, GAME_H - 60, "CANCEL", {
+      fontSize: "16px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5));
+    cancelBg.setInteractive();
+    cancelBg.on("pointerdown", () => modal.destroy(true));
+  }
+
+  private getItemIcon(itemId: string): string {
+    switch (itemId) {
+      case "potion": return "\u2764";
+      case "super_potion": return "\u2764";
+      case "revive": return "\u2606";
+      case "escape_rope": return "\u21b6";
+      case "repel": return "\u2668";
+      case "dungeon_map": return "\u25a9";
+      default: return "\u25a0";
+    }
+  }
+}
