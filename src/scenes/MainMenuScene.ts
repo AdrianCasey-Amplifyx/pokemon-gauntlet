@@ -88,9 +88,13 @@ export class MainMenuScene extends Phaser.Scene {
     // Inventory summary below roster preview
     const itemsY = 150;
     const itemEntries = this.gameState.playerItems.filter((b) => b.quantity > 0);
+    const eggCount = this.gameState.eggs.length;
     if (itemEntries.length > 0) {
       const itemStr = itemEntries.map((b) => `${this.getItemIcon(b.item.id)}${b.item.name} x${b.quantity}`).join("  ");
-      this.add.text(GAME_W / 2, itemsY, itemStr, { fontSize: "10px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(0.5);
+      const suffix = eggCount > 0 ? `   🥚 x${eggCount}` : "";
+      this.add.text(GAME_W / 2, itemsY, itemStr + suffix, { fontSize: "10px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(0.5);
+    } else if (eggCount > 0) {
+      this.add.text(GAME_W / 2, itemsY, `🥚 Eggs x${eggCount}`, { fontSize: "10px", fontFamily: "monospace", color: "#cc88cc" }).setOrigin(0.5);
     } else {
       this.add.text(GAME_W / 2, itemsY, "No items", { fontSize: "10px", fontFamily: "monospace", color: "#666666" }).setOrigin(0.5);
     }
@@ -270,21 +274,61 @@ export class MainMenuScene extends Phaser.Scene {
       }
     });
 
-    // Eggs section
+    // Eggs section — full card style so it's impossible to miss, with a
+    // progress bar ticking toward hatch.
     if (eggs.length > 0) {
-      const eggSectionY = 80 + items.length * 70 + 10;
-      this.add.text(GAME_W / 2, eggSectionY, "EGGS", { fontSize: "12px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold" }).setOrigin(0.5);
+      const headerY = 80 + items.length * 70 + 14;
+
+      // Divider + header
+      this.add.rectangle(GAME_W / 2, headerY - 8, GAME_W - 60, 1, 0x445566);
+      this.add.text(GAME_W / 2, headerY + 6, `EGGS (${eggs.length})`, {
+        fontSize: "13px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold",
+      }).setOrigin(0.5);
+
       eggs.forEach((egg, i) => {
-        const y = eggSectionY + 22 + i * 32;
-        if (y > GAME_H - 75) return;
+        const y = headerY + 32 + i * 58;
+        if (y + 25 > GAME_H - 70) return;
+
         const tierData = EGG_TIERS[egg.tier];
-        this.add.rectangle(GAME_W / 2, y, GAME_W - 40, 28, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, tierData.color);
+        const w = GAME_W - 40;
+
+        // Card
+        this.add.rectangle(GAME_W / 2, y, w, 50, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(2, tierData.color);
+
+        // Egg sprite
         if (this.textures.exists(tierData.spriteKey)) {
-          const img = this.add.image(35, y, tierData.spriteKey).setDisplaySize(24, 24).setOrigin(0.5);
+          const img = this.add.image(35, y, tierData.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
           img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
-        this.add.text(55, y, tierData.name, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
-        this.add.text(GAME_W - 30, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
+
+        // Name
+        this.add.text(65, y - 12, tierData.name, {
+          fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
+
+        // Steps remaining, right-aligned
+        this.add.text(GAME_W - 25, y - 12, `${egg.stepsRemaining} / ${tierData.stepsToHatch}`, {
+          fontSize: "11px", fontFamily: "monospace", color: "#aaccff", fontStyle: "bold",
+        }).setOrigin(1, 0.5);
+
+        // Flavor line
+        const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
+        const flavor = egg.stepsRemaining === 0 ? "Ready to hatch!" : "Walk in dungeons to hatch";
+        this.add.text(65, y + 5, flavor, {
+          fontSize: "9px", fontFamily: "monospace",
+          color: egg.stepsRemaining === 0 ? "#44ff88" : "#888899",
+        }).setOrigin(0, 0.5);
+
+        // Progress bar
+        const barX = 65;
+        const barY = y + 17;
+        const barW = GAME_W - barX - 25;
+        const barH = 5;
+        this.add.rectangle(barX + barW / 2, barY, barW, barH, 0x222233).setOrigin(0.5);
+        const pct = Math.max(0, Math.min(1, stepsTaken / tierData.stepsToHatch));
+        if (pct > 0) {
+          this.add.rectangle(barX, barY - barH / 2, barW * pct, barH, tierData.color).setOrigin(0, 0);
+        }
       });
     }
   }
