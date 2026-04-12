@@ -27,10 +27,12 @@ import { WORLD_NAMES, MAPS_PER_WORLD } from "../data/worlds.ts";
 const GAME_W = 390;
 const GAME_H = 844;
 const PARTY_SIZE = 3;
+const LIST_PAGE_SIZE = 10;
 
 export class MainMenuScene extends Phaser.Scene {
   private gameState!: GameState;
   private selectedParty: number[] = [];
+  private listPage = 0;
 
   constructor() {
     super({ key: "MainMenuScene" });
@@ -163,7 +165,11 @@ export class MainMenuScene extends Phaser.Scene {
     this.showToast(`All Pokemon healed!  -${cost}g`, { color: "#44ff88", sfx: "heal" });
   }
 
-  private showScreen(screen: "roster" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train"): void {
+  private showScreen(
+    screen: "roster" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train",
+    resetPage = true,
+  ): void {
+    if (resetPage) this.listPage = 0;
     this.children.removeAll(true);
 
     // Dark background
@@ -190,12 +196,14 @@ export class MainMenuScene extends Phaser.Scene {
   private drawRoster(): void {
     this.add.text(GAME_W / 2, 30, "YOUR POKEMON", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
 
-    this.gameState.roster.forEach((pokemon, i) => {
-      const y = 70 + i * 75;
-      if (y > GAME_H - 100) return;
+    this.clampListPage(this.gameState.roster.length);
+    const { slice } = this.pagedSlice(this.gameState.roster);
+
+    slice.forEach((pokemon, localIdx) => {
+      const y = 60 + localIdx * 66;
       const x = 20;
       const w = GAME_W - 40;
-      const h = 68;
+      const h = 60;
 
       this.add.rectangle(x + w / 2, y + h / 2, w, h, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
 
@@ -204,12 +212,12 @@ export class MainMenuScene extends Phaser.Scene {
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(x + 52, y + 8, pokemon.species.name, { fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" });
-      this.add.text(x + w - 5, y + 8, `Lv${pokemon.level}`, { fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(1, 0);
+      this.add.text(x + 52, y + 5, pokemon.species.name, { fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" });
+      this.add.text(x + w - 5, y + 5, `Lv${pokemon.level}`, { fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(1, 0);
 
       // HP bar
       const barX = x + 52;
-      const barY = y + 28;
+      const barY = y + 24;
       const barW = w - 65;
       this.add.rectangle(barX + barW / 2, barY + 3, barW, 6, 0x333333).setOrigin(0.5);
       const hpPct = pokemon.currentHP / pokemon.maxHP;
@@ -218,7 +226,7 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(barX, barY + 8, `HP ${pokemon.currentHP}/${pokemon.maxHP}`, { fontSize: "7px", fontFamily: "monospace", color: "#888888" });
 
       // XP bar
-      const xpBarY = barY + 18;
+      const xpBarY = barY + 16;
       const needed = xpToNextLevel(pokemon.level);
       const xpPct = Math.min(pokemon.currentXP / needed, 1);
       this.add.rectangle(barX + barW / 2, xpBarY + 3, barW, 5, 0x222244).setOrigin(0.5);
@@ -230,6 +238,8 @@ export class MainMenuScene extends Phaser.Scene {
       const typeStr = pokemon.species.types.map((t) => t.substring(0, 3).toUpperCase()).join("/");
       this.add.text(x + w - 5, xpBarY + 7, typeStr, { fontSize: "7px", fontFamily: "monospace", color: "#555577" }).setOrigin(1, 0);
     });
+
+    this.drawPagination(this.gameState.roster.length, () => this.showScreen("roster", false));
   }
 
   // --- Items view ---
@@ -398,6 +408,46 @@ export class MainMenuScene extends Phaser.Scene {
     showToast(this, message, opts);
   }
 
+  /**
+   * Paginate helpers — slice the array and draw a PREV / NEXT strip above
+   * the BACK button. Call `clampListPage` first so items removed elsewhere
+   * (e.g. evolved, released) don't leave us on a now-empty page.
+   */
+  private clampListPage(totalItems: number): void {
+    const pages = Math.max(1, Math.ceil(totalItems / LIST_PAGE_SIZE));
+    if (this.listPage >= pages) this.listPage = pages - 1;
+    if (this.listPage < 0) this.listPage = 0;
+  }
+
+  private pagedSlice<T>(items: T[]): { slice: T[]; start: number } {
+    const start = this.listPage * LIST_PAGE_SIZE;
+    return { slice: items.slice(start, start + LIST_PAGE_SIZE), start };
+  }
+
+  private drawPagination(totalItems: number, redraw: () => void): void {
+    if (totalItems <= LIST_PAGE_SIZE) return;
+    const pages = Math.ceil(totalItems / LIST_PAGE_SIZE);
+    const y = GAME_H - 80;
+
+    this.add.text(GAME_W / 2, y, `Page ${this.listPage + 1} / ${pages}`, {
+      fontSize: "11px", fontFamily: "monospace", color: "#aabbcc", fontStyle: "bold",
+    }).setOrigin(0.5);
+
+    if (this.listPage > 0) {
+      const prevBg = this.add.rectangle(GAME_W / 2 - 95, y, 74, 26, 0x223344).setOrigin(0.5).setStrokeStyle(1, 0x445566);
+      this.add.text(GAME_W / 2 - 95, y, "< PREV", { fontSize: "11px", fontFamily: "monospace", color: "#aaccee", fontStyle: "bold" }).setOrigin(0.5);
+      prevBg.setInteractive();
+      prevBg.on("pointerdown", () => { this.listPage--; redraw(); });
+    }
+
+    if (this.listPage < pages - 1) {
+      const nextBg = this.add.rectangle(GAME_W / 2 + 95, y, 74, 26, 0x223344).setOrigin(0.5).setStrokeStyle(1, 0x445566);
+      this.add.text(GAME_W / 2 + 95, y, "NEXT >", { fontSize: "11px", fontFamily: "monospace", color: "#aaccee", fontStyle: "bold" }).setOrigin(0.5);
+      nextBg.setInteractive();
+      nextBg.on("pointerdown", () => { this.listPage++; redraw(); });
+    }
+  }
+
   /** Predicate: can this item be applied to this pokemon right now? */
   private canTargetWith(belt: BattleItem, pokemon: BattlePokemon): boolean {
     const id = belt.item.id;
@@ -444,7 +494,8 @@ export class MainMenuScene extends Phaser.Scene {
     }
   }
 
-  private showItemUseTarget(belt: BattleItem): void {
+  private showItemUseTarget(belt: BattleItem, resetPage = true): void {
+    if (resetPage) this.listPage = 0;
     this.children.removeAll(true);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
 
@@ -452,9 +503,11 @@ export class MainMenuScene extends Phaser.Scene {
     this.add.text(GAME_W / 2, 30, `${icon} Use ${belt.item.name} on?`, { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
     this.add.text(GAME_W / 2, 55, `${belt.quantity} remaining`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
 
-    this.gameState.roster.forEach((pokemon, i) => {
-      const y = 90 + i * 65;
-      if (y > GAME_H - 100) return;
+    this.clampListPage(this.gameState.roster.length);
+    const { slice } = this.pagedSlice(this.gameState.roster);
+
+    slice.forEach((pokemon, localIdx) => {
+      const y = 90 + localIdx * 65;
 
       const canTarget = this.canTargetWith(belt, pokemon);
       const reason = canTarget ? "" : this.unavailableReason(belt, pokemon);
@@ -514,6 +567,8 @@ export class MainMenuScene extends Phaser.Scene {
         });
       }
     });
+
+    this.drawPagination(this.gameState.roster.length, () => this.showItemUseTarget(belt, false));
 
     // Back
     const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 45, 160, 38, 0x553333).setOrigin(0.5).setStrokeStyle(1, 0x774444);
@@ -771,9 +826,12 @@ export class MainMenuScene extends Phaser.Scene {
       });
     }
 
-    this.gameState.roster.forEach((pokemon, i) => {
-      const y = 105 + i * 55;
-      if (y > GAME_H - 130) return;
+    this.clampListPage(this.gameState.roster.length);
+    const { slice, start } = this.pagedSlice(this.gameState.roster);
+
+    slice.forEach((pokemon, localIdx) => {
+      const i = start + localIdx;
+      const y = 105 + localIdx * 55;
       const isSelected = this.selectedParty.includes(i);
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 46, isSelected ? 0x334422 : 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(2, isSelected ? 0x44aa22 : 0x444466);
@@ -797,14 +855,16 @@ export class MainMenuScene extends Phaser.Scene {
         } else if (this.selectedParty.length < PARTY_SIZE) {
           this.selectedParty.push(i);
         }
-        this.showScreen("party");
+        this.showScreen("party", false);
       });
     });
 
+    this.drawPagination(this.gameState.roster.length, () => this.showScreen("party", false));
+
     // GO button
     if (this.selectedParty.length > 0) {
-      const goBg = this.add.rectangle(GAME_W / 2, GAME_H - 95, 220, 42, 0x338855).setOrigin(0.5).setStrokeStyle(2, 0x44aa66);
-      this.add.text(GAME_W / 2, GAME_H - 95, `ADVENTURE! (${this.selectedParty.length})`, { fontSize: "15px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5);
+      const goBg = this.add.rectangle(GAME_W / 2, GAME_H - 115, 220, 38, 0x338855).setOrigin(0.5).setStrokeStyle(2, 0x44aa66);
+      this.add.text(GAME_W / 2, GAME_H - 115, `ADVENTURE! (${this.selectedParty.length})`, { fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5);
       goBg.setInteractive();
       goBg.on("pointerdown", () => this.startAdventure());
     }
@@ -816,9 +876,12 @@ export class MainMenuScene extends Phaser.Scene {
     this.add.text(GAME_W / 2, 55, `Gold: ${this.gameState.gold}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
     this.add.text(GAME_W / 2, 75, "Select a Pokemon to manage moves", { fontSize: "10px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
 
-    this.gameState.roster.forEach((pokemon, i) => {
-      const y = 105 + i * 60;
-      if (y > GAME_H - 100) return;
+    this.clampListPage(this.gameState.roster.length);
+    const { slice, start } = this.pagedSlice(this.gameState.roster);
+
+    slice.forEach((pokemon, localIdx) => {
+      const i = start + localIdx;
+      const y = 105 + localIdx * 60;
 
       const trainable = getTrainableMoves(pokemon);
       const unlearnedCount = trainable.filter((t) => !t.known).length;
@@ -844,6 +907,8 @@ export class MainMenuScene extends Phaser.Scene {
       cardBg.setInteractive();
       cardBg.on("pointerdown", () => this.drawTrainMoves(i));
     });
+
+    this.drawPagination(this.gameState.roster.length, () => this.showScreen("train", false));
   }
 
   // --- Training: Move management for a specific Pokemon ---
