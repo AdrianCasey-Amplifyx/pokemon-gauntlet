@@ -140,12 +140,12 @@ Four status types (`src/types.ts` → `StatusType`):
 
 | Status | Effect | Inflicted by (examples) |
 |---|---|---|
-| **Burn** | End-of-turn chip damage; emitted as `status_damage` | Ember, Fire Punch, Flamethrower, Fire Blast |
-| **Poison** | End-of-turn chip damage | Poison Sting, Sludge, Smog |
-| **Paralyze** | Chance to skip turn (`status_skip` event) | Thunder Wave, Body Slam, Thunderbolt |
-| **Sleep** | Turn skipped, emitted as `status_skip` | Sing, Hypnosis, Sleep Powder |
+| **Burn** | 1/16 max HP end-of-turn chip damage; emitted as `status_damage` | Ember, Fire Punch, Flamethrower, Fire Blast |
+| **Poison** | 1/8 max HP end-of-turn chip damage | Poison Sting, Sludge, Smog, **Poison Powder**, **Poison Gas**, Toxic |
+| **Paralyze** | 25% chance to skip turn (`status_skip` event) | Thunder Wave, Thunder Shock, Thunderbolt, Stun Spore, **Glare** |
+| **Sleep** | Turn always skipped; 33% wake-up chance at start of each skip | **Sing**, **Hypnosis**, Sleep Powder, **Spore** (85%), **Lovely Kiss** (75%) |
 
-Moves carry a `{ type, chance }` effect object; the battle state machine rolls for application, emits `status_applied`, and tracks active statuses on `BattlePokemon.statusEffects`.
+Moves carry a `{ type, chance }` effect object; the battle state machine rolls for application, emits `status_applied`, and tracks active statuses on `BattlePokemon.statusEffects`. **Damage-dealing moves** (`power > 0`) apply their status on top of dealing damage. **Status-only moves** (`power: 0`) skip the damage step and only roll for status — these cover sleep/paralyze/poison infliction at high chance (see the bolded entries above). Wild AI picks a status move ~10% of the time if one is available (`wildAI.ts:26`).
 
 ### 3.7 Switching & Items In-Battle
 

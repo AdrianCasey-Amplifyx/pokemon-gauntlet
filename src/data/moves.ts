@@ -15,6 +15,9 @@ export const MOVES: Record<string, MoveData> = {
   strength: { id: "strength", name: "Strength", type: "normal", power: 50, accuracy: 100, cooldown: 2, category: "physical", description: "A powerful strike." },
   rage: { id: "rage", name: "Rage", type: "normal", power: 20, accuracy: 100, cooldown: 0, category: "physical", description: "An angry attack." },
   wrap: { id: "wrap", name: "Wrap", type: "normal", power: 25, accuracy: 100, cooldown: 1, category: "physical", description: "Wraps and squeezes." },
+  sing: { id: "sing", name: "Sing", type: "normal", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "A soothing song. May put foe to sleep.", effect: { type: "sleep", chance: 0.55 } },
+  lovely_kiss: { id: "lovely_kiss", name: "Lovely Kiss", type: "normal", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "A scary kiss. May put foe to sleep.", effect: { type: "sleep", chance: 0.75 } },
+  glare: { id: "glare", name: "Glare", type: "normal", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "A terrifying glare. May paralyze.", effect: { type: "paralyze", chance: 0.75 } },
   headbutt: { id: "headbutt", name: "Headbutt", type: "normal", power: 45, accuracy: 100, cooldown: 1, category: "physical", description: "A ramming headbutt." },
   double_edge: { id: "double_edge", name: "Double-Edge", type: "normal", power: 70, accuracy: 100, cooldown: 3, category: "physical", description: "A reckless tackle." },
   fury_attack: { id: "fury_attack", name: "Fury Attack", type: "normal", power: 25, accuracy: 100, cooldown: 0, category: "physical", description: "Jabs repeatedly." },
@@ -55,6 +58,8 @@ export const MOVES: Record<string, MoveData> = {
   absorb: { id: "absorb", name: "Absorb", type: "grass", power: 20, accuracy: 100, cooldown: 0, category: "special", description: "Drains a little HP." },
   sleep_powder: { id: "sleep_powder", name: "Sleep Powder", type: "grass", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "May put foe to sleep.", effect: { type: "sleep", chance: 0.5 } },
   stun_spore: { id: "stun_spore", name: "Stun Spore", type: "grass", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "May paralyze.", effect: { type: "paralyze", chance: 0.6 } },
+  poison_powder: { id: "poison_powder", name: "Poison Powder", type: "grass", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "Toxic spores. May poison.", effect: { type: "poison", chance: 0.75 } },
+  spore: { id: "spore", name: "Spore", type: "grass", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "Deep sleep spores. Likely to sleep.", effect: { type: "sleep", chance: 0.85 } },
   leech_seed: { id: "leech_seed", name: "Leech Seed", type: "grass", power: 20, accuracy: 100, cooldown: 1, category: "special", description: "Plants a seed." },
 
   // === ELECTRIC ===
@@ -81,6 +86,7 @@ export const MOVES: Record<string, MoveData> = {
   psybeam: { id: "psybeam", name: "Psybeam", type: "psychic", power: 45, accuracy: 100, cooldown: 1, category: "special", description: "A psychic beam." },
   psychic: { id: "psychic", name: "Psychic", type: "psychic", power: 60, accuracy: 100, cooldown: 2, category: "special", description: "A strong psi attack." },
   dream_eater: { id: "dream_eater", name: "Dream Eater", type: "psychic", power: 65, accuracy: 100, cooldown: 3, category: "special", description: "Eats a dream." },
+  hypnosis: { id: "hypnosis", name: "Hypnosis", type: "psychic", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "Hypnotic gaze. May cause sleep.", effect: { type: "sleep", chance: 0.6 } },
 
   // === POISON ===
   poison_sting: { id: "poison_sting", name: "Poison Sting", type: "poison", power: 25, accuracy: 100, cooldown: 0, category: "physical", description: "A toxic sting. May poison.", effect: { type: "poison", chance: 0.2 } },
@@ -89,6 +95,7 @@ export const MOVES: Record<string, MoveData> = {
   sludge_bomb: { id: "sludge_bomb", name: "Sludge Bomb", type: "poison", power: 60, accuracy: 100, cooldown: 2, category: "special", description: "An explosive sludge. May poison.", effect: { type: "poison", chance: 0.3 } },
   smog: { id: "smog", name: "Smog", type: "poison", power: 25, accuracy: 100, cooldown: 0, category: "special", description: "Noxious gas." },
   toxic: { id: "toxic", name: "Toxic", type: "poison", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "Badly poisons.", effect: { type: "poison", chance: 0.9 } },
+  poison_gas: { id: "poison_gas", name: "Poison Gas", type: "poison", power: 0, accuracy: 100, cooldown: 3, category: "special", description: "A cloud of poison gas.", effect: { type: "poison", chance: 0.55 } },
 
   // === FIGHTING ===
   karate_chop: { id: "karate_chop", name: "Karate Chop", type: "fighting", power: 30, accuracy: 100, cooldown: 0, category: "physical", description: "A sharp chop." },
