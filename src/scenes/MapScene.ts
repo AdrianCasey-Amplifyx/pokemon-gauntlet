@@ -787,8 +787,10 @@ export class MapScene extends Phaser.Scene {
       modal.add(cardBg);
 
       if (this.textures.exists(pokemon.species.spriteKey)) {
+        // Always full-alpha so sprites stay readable even when the card is
+        // disabled (e.g. all-full-HP party).
         const img = this.add.image(GAME_W / 2 - 130, y, pokemon.species.spriteKey)
-          .setDisplaySize(36, 36).setOrigin(0.5).setAlpha(canTarget ? 1 : 0.3);
+          .setDisplaySize(44, 44).setOrigin(0.5);
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         modal.add(img);
       }

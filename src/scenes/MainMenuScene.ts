@@ -352,7 +352,9 @@ export class MainMenuScene extends Phaser.Scene {
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 52, canTarget ? 0x222244 : 0x181822, 0.9).setOrigin(0.5).setStrokeStyle(1, canTarget ? 0x444466 : 0x222233);
 
       if (this.textures.exists(pokemon.species.spriteKey)) {
-        const img = this.add.image(GAME_W / 2 - 140, y, pokemon.species.spriteKey).setDisplaySize(32, 32).setOrigin(0.5).setAlpha(canTarget ? 1 : 0.3);
+        // Always full-alpha so sprites stay readable even when the card is
+        // disabled (e.g. all-full-HP roster after a heal).
+        const img = this.add.image(GAME_W / 2 - 140, y, pokemon.species.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
