@@ -28,19 +28,20 @@ src/
   main.ts                    # Phaser game config (390x844 portrait)
   types.ts                   # All shared types and interfaces
   data/
-    pokemon.ts               # 151 Gen 1 Pokemon with stats, movesets, evolution
+    pokemon.ts               # 151 Gen 1 Pokemon with stats, movesets, evolution (level + stone)
     moves.ts                 # 80+ moves across 15 types, 4 cooldown tiers
-    items.ts                 # Items, apply logic, shop data, gold rewards
+    items.ts                 # Items (medicine/field/vitamin/stone/candy/battle/tm), applyItem dispatcher
     typeChart.ts             # 15-type effectiveness matrix (Gen 1)
-    shop.ts                  # Shop pricing, availability, move training
+    shop.ts                  # Shop pricing, availability, move training, vitamin/TM/candy helpers
+    stoneEvolutions.ts       # Stone → evolution lookup (Eevee branches, Raichu, Ninetales, etc)
     worlds.ts                # 8 worlds, encounter pools, scaling formulas, bosses
     eggs.ts                  # Egg tiers (common/rare/legendary), pools, hatch logic
   core/
-    battleStateMachine.ts    # Turn flow, action resolution, event system
-    damageCalc.ts            # Damage formula with STAB + type effectiveness
+    battleStateMachine.ts    # Turn flow, action resolution, event system, X-item boost reset
+    damageCalc.ts            # Damage formula with STAB + type effectiveness + stage multipliers
     cooldownManager.ts       # Per-move cooldown tracking
     wildAI.ts                # Enemy move selection logic
-    statCalc.ts              # Stat calc, XP/leveling, move learning
+    statCalc.ts              # Stat calc, XP/leveling, move learning, evolveIntoSpecies, applyStatBonuses
     typeEffectiveness.ts     # Type chart lookup helpers
     mapGenerator.ts          # Procedural fog-of-war dungeon generation
     fogOfWar.ts              # Tile reveal logic
@@ -108,8 +109,9 @@ TitleScene → StarterSelectScene → MainMenuScene (town hub)
 
 ## Data Model
 
-- `BattlePokemon` — runtime instance with mutable HP, XP, cooldowns, statusEffects
-- `PokemonSpecies` — static species data with base stats and `MovePoolEntry[]` (moveId + unlock level), plus `evolvesFrom`/`evolutionLevel`
+- `BattlePokemon` — runtime instance with mutable HP, XP, cooldowns, statusEffects, `statBonuses` (persisted vitamin bonuses, layered via `applyStatBonuses`), and `battleBoosts` (temporary X-item stage counters, reset per battle on the player's roster)
+- `PokemonSpecies` — static species data with base stats and `MovePoolEntry[]` (moveId + unlock level), plus `evolvesFrom`/`evolutionLevel` for level-based evolution and `evolutionStone` for stone-based evolution (Raichu, Ninetales, Eeveelutions, etc)
+- `ItemData` — carries `category: ItemCategory` (`medicine` · `field` · `vitamin` · `stone` · `candy` · `battle` · `tm`) and optional `param` (stat key, stone id, TM moveId). `applyItem` dispatches by category
 - `GameState` — `roster`, `playerParty`, `playerItems`, `gold`, `seenPokemon` (species IDs unlocked in shop), `worlds` progress, `activeWorld`, `currentMap`, `playerX`/`playerY`, `repelSteps`, `eggs` (array of `EggInstance` with tier + stepsRemaining)
 - `DungeonMap` — 2D tile grid with fog of war, encounter chances, gold drops, single exit
 

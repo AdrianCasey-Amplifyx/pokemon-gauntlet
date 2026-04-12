@@ -1,10 +1,10 @@
-import type { GameState, BattlePokemon, WorldProgress, EggInstance } from "../types.ts";
+import type { GameState, BattlePokemon, WorldProgress, EggInstance, Stats } from "../types.ts";
 import { getPokemon } from "../data/pokemon.ts";
 import { getMove } from "../data/moves.ts";
 import { ITEMS } from "../data/items.ts";
 import { TOTAL_WORLDS } from "../data/worlds.ts";
 import { createEgg } from "../data/eggs.ts";
-import { calculateAllStats, createBattlePokemon, getMovesForLevel } from "./statCalc.ts";
+import { applyStatBonuses, calculateAllStats, createBattlePokemon, getMovesForLevel, zeroStats } from "./statCalc.ts";
 
 const SAVE_KEY_PREFIX = "pokemonGauntlet_save_";
 const LEGACY_SAVE_KEY = "pokemonGauntlet_save";
@@ -22,6 +22,11 @@ interface SavePokemon {
   currentXP: number;
   currentHP: number;
   moveIds?: string[]; // persisted move choices (optional for backwards compat)
+  statBonuses?: Stats; // vitamin bonuses, optional for backwards compat
+}
+
+function hasAnyBonus(s: Stats): boolean {
+  return s.hp > 0 || s.atk > 0 || s.def > 0 || s.spd > 0 || s.spc > 0;
 }
 
 interface SaveData {
@@ -37,18 +42,26 @@ interface SaveData {
 }
 
 function serializePokemon(p: BattlePokemon): SavePokemon {
-  return {
+  const save: SavePokemon = {
     speciesId: p.species.id,
     level: p.level,
     currentXP: p.currentXP,
     currentHP: p.currentHP,
     moveIds: p.moves.map((m) => m.id),
   };
+  if (hasAnyBonus(p.statBonuses)) {
+    save.statBonuses = { ...p.statBonuses };
+  }
+  return save;
 }
 
 function deserializePokemon(s: SavePokemon): BattlePokemon {
   const species = getPokemon(s.speciesId);
-  const stats = calculateAllStats(species.baseStats, s.level);
+  const statBonuses: Stats = s.statBonuses ? { ...s.statBonuses } : zeroStats();
+  const stats = applyStatBonuses(
+    calculateAllStats(species.baseStats, s.level),
+    statBonuses
+  );
   // Use saved moves if available, otherwise fall back to level-based calculation
   const moveIds = s.moveIds && s.moveIds.length > 0
     ? s.moveIds
@@ -66,6 +79,8 @@ function deserializePokemon(s: SavePokemon): BattlePokemon {
     moves,
     cooldowns: moves.map(() => 0),
     statusEffects: [],
+    statBonuses,
+    battleBoosts: { atk: 0, def: 0, spd: 0, spc: 0 },
   };
 }
 
@@ -79,7 +94,7 @@ export function getActiveSlot(): number {
 
 export function saveGame(state: GameState): void {
   const data: SaveData = {
-    version: 1,
+    version: 2,
     roster: state.roster.map(serializePokemon),
     partyIndices: state.playerParty.map((p) =>
       state.roster.indexOf(p)

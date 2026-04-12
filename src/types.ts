@@ -60,6 +60,14 @@ export interface PokemonSpecies {
   spriteKey: string;
   evolvesFrom?: string;
   evolutionLevel?: number;
+  evolutionStone?: string;
+}
+
+export interface StageBoosts {
+  atk: number;
+  def: number;
+  spd: number;
+  spc: number;
 }
 
 export interface BattlePokemon {
@@ -72,15 +80,28 @@ export interface BattlePokemon {
   moves: MoveData[];
   cooldowns: number[];
   statusEffects: StatusType[];
+  statBonuses: Stats; // permanent vitamin bonuses, persisted
+  battleBoosts: StageBoosts; // temporary X item stages, reset per battle
 }
 
 // --- Items ---
+
+export type ItemCategory =
+  | "medicine"
+  | "field"
+  | "vitamin"
+  | "stone"
+  | "candy"
+  | "battle"
+  | "tm";
 
 export interface ItemData {
   id: string;
   name: string;
   description: string;
-  target: "ally" | "self"; // ally = pick a party member, self = active Pokemon
+  category: ItemCategory;
+  target: "ally" | "self"; // ally = pick a party member, self = field-use item
+  param?: string; // stone id, TM moveId, stat key, etc.
 }
 
 export interface BattleItem {
@@ -198,6 +219,15 @@ export interface StatusSkipEvent extends BattleEvent {
   pokemonName: string;
 }
 
+export interface StatBoostEvent extends BattleEvent {
+  type: "stat_boost";
+  actor: "player" | "enemy";
+  stat: keyof StageBoosts;
+  stages: number;
+  pokemonName: string;
+  itemName: string;
+}
+
 export type AnyBattleEvent =
   | DamageEvent
   | MoveUsedEvent
@@ -208,7 +238,8 @@ export type AnyBattleEvent =
   | ForceSwapEvent
   | StatusAppliedEvent
   | StatusDamageEvent
-  | StatusSkipEvent;
+  | StatusSkipEvent
+  | StatBoostEvent;
 
 // --- Map ---
 

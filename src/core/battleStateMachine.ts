@@ -14,9 +14,10 @@ import type {
   StatusAppliedEvent,
   StatusDamageEvent,
   StatusSkipEvent,
+  StatBoostEvent,
   StatusType,
 } from "../types.ts";
-import { calculateDamage } from "./damageCalc.ts";
+import { calculateDamage, stageMultiplier } from "./damageCalc.ts";
 import { useMove, tickCooldowns } from "./cooldownManager.ts";
 import { chooseWildAction } from "./wildAI.ts";
 import { applyItem } from "../data/items.ts";
@@ -83,6 +84,11 @@ export class BattleStateMachine {
 
   start(): void {
     this.phase = "PLAYER_CHOOSE_ACTION";
+    // Clear any stale X-item boosts from prior battles on the player's party
+    // (the same instances persist across battles; enemies are always fresh).
+    for (const p of this.playerParty) {
+      p.battleBoosts = { atk: 0, def: 0, spd: 0, spc: 0 };
+    }
     // Track all enemy Pokemon as seen
     for (const p of this.enemyParty) {
       this.seenSpeciesIds.add(p.species.id);
@@ -172,9 +178,9 @@ export class BattleStateMachine {
       this.resolveAttack(enemyAction, events);
       this.handleFaintCascade(events);
     } else {
-      // Both attack — speed determines order
-      const playerSpeed = this.playerPokemon.stats.spd;
-      const enemySpeed = this.enemyPokemon.stats.spd;
+      // Both attack — speed determines order (X Speed boost included)
+      const playerSpeed = this.playerPokemon.stats.spd * stageMultiplier(this.playerPokemon.battleBoosts.spd);
+      const enemySpeed = this.enemyPokemon.stats.spd * stageMultiplier(this.enemyPokemon.battleBoosts.spd);
 
       let first: AttackAction;
       let second: AttackAction;
@@ -367,12 +373,30 @@ export class BattleStateMachine {
     const beltEntry = this.playerItems.find((b) => b.item.id === action.itemId && b.quantity > 0);
     if (!beltEntry) return;
 
+    // Only medicine and battle items are usable in battle. Guard against UI bugs.
+    const category = beltEntry.item.category;
+    if (category !== "medicine" && category !== "battle") return;
+
     const target = this.playerParty[action.targetIndex];
     if (!target) return;
 
-    const { success, healAmount } = applyItem(action.itemId, target);
-    if (success) {
-      beltEntry.quantity--;
+    const result = applyItem(action.itemId, target, { roster: this.playerParty });
+    if (result.kind === "fail") return;
+
+    beltEntry.quantity--;
+
+    if (result.kind === "boost") {
+      events.push({
+        type: "stat_boost",
+        actor: "player",
+        stat: result.stat,
+        stages: result.stages,
+        pokemonName: target.species.name,
+        itemName: beltEntry.item.name,
+      } as StatBoostEvent);
+    } else {
+      const healAmount =
+        result.kind === "heal" || result.kind === "revive" ? result.healAmount : undefined;
       events.push({
         type: "item_used",
         actor: "player",

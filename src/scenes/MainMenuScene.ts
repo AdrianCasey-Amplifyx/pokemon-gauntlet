@@ -1,12 +1,22 @@
 import Phaser from "phaser";
-import type { GameState, EggTier } from "../types.ts";
-import { createBattlePokemon, xpToNextLevel } from "../core/statCalc.ts";
+import type { BattleItem, BattlePokemon, GameState, EggTier, ItemCategory } from "../types.ts";
+import { createBattlePokemon, evolveIntoSpecies, xpToNextLevel } from "../core/statCalc.ts";
 import { saveGame } from "../core/saveManager.ts";
-import { ITEMS, applyItem } from "../data/items.ts";
+import { ITEMS, applyItem, getTMMove, VITAMIN_CONFIG } from "../data/items.ts";
 import { getPokemon } from "../data/pokemon.ts";
-import { getAvailableShopPokemon, getAvailableShopItems, getWorldsUnlocked, getTrainableMoves, getEvolutionInfo } from "../data/shop.ts";
+import { getStoneEvolution } from "../data/stoneEvolutions.ts";
+import {
+  getAvailableShopPokemon,
+  getAvailableShopItems,
+  getWorldsUnlocked,
+  getTrainableMoves,
+  getEvolutionInfo,
+  canUseVitamin,
+  canUseTM,
+  canUseRareCandy,
+  rareCandyCap,
+} from "../data/shop.ts";
 import { EGG_TIERS, getAllEggTiers, createEgg } from "../data/eggs.ts";
-import { calculateAllStats } from "../core/statCalc.ts";
 import { getMove } from "../data/moves.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 import { generateDungeon } from "../core/mapGenerator.ts";
@@ -245,39 +255,66 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    items.forEach((belt, i) => {
-      const y = 80 + i * 70;
-      const w = GAME_W - 40;
+    // Group by category so sections are obvious
+    const categoryOrder: ItemCategory[] = ["medicine", "battle", "vitamin", "stone", "candy", "tm", "field"];
+    const categoryLabels: Record<ItemCategory, string> = {
+      medicine: "MEDICINE",
+      battle: "BATTLE",
+      vitamin: "VITAMINS",
+      stone: "STONES",
+      candy: "CANDY",
+      tm: "TMs",
+      field: "FIELD",
+    };
+    const grouped = new Map<ItemCategory, BattleItem[]>();
+    for (const belt of items) {
+      const cat = belt.item.category;
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(belt);
+    }
 
-      this.add.rectangle(GAME_W / 2, y, w, 55, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
+    let y = 72;
+    for (const cat of categoryOrder) {
+      const list = grouped.get(cat);
+      if (!list || list.length === 0) continue;
 
-      // Icon
-      const icon = this.getItemIcon(belt.item.id);
-      this.add.text(35, y - 5, icon, { fontSize: "22px", fontFamily: "monospace" }).setOrigin(0.5);
+      // Section header
+      this.add.text(20, y, categoryLabels[cat], {
+        fontSize: "10px", fontFamily: "monospace", color: "#7788aa", fontStyle: "bold",
+      });
+      y += 14;
 
-      // Name + quantity
-      this.add.text(60, y - 12, `${belt.item.name}  x${belt.quantity}`, {
-        fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
-      }).setOrigin(0, 0.5);
+      for (const belt of list) {
+        if (y + 25 > GAME_H - 80) break;
 
-      // Description
-      this.add.text(60, y + 10, belt.item.description, {
-        fontSize: "10px", fontFamily: "monospace", color: "#888888",
-      }).setOrigin(0, 0.5);
+        const w = GAME_W - 40;
+        this.add.rectangle(GAME_W / 2, y + 22, w, 44, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
 
-      // Use button for healing items (not escape rope — only useful in dungeon)
-      if (belt.item.id !== "escape_rope" && belt.item.target === "ally") {
-        const useBg = this.add.rectangle(GAME_W - 50, y, 60, 30, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
-        this.add.text(GAME_W - 50, y, "USE", { fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5);
-        useBg.setInteractive();
-        useBg.on("pointerdown", () => this.showItemUseTarget(belt));
+        // Icon
+        const icon = this.getItemIcon(belt.item.id);
+        this.add.text(30, y + 22, icon, { fontSize: "18px", fontFamily: "monospace" }).setOrigin(0.5);
+
+        // Name + quantity
+        this.add.text(55, y + 13, `${belt.item.name}  x${belt.quantity}`, {
+          fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
+
+        // Description
+        this.add.text(55, y + 30, belt.item.description, {
+          fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        }).setOrigin(0, 0.5);
+
+        this.drawItemUseButton(belt, GAME_W - 48, y + 22);
+
+        y += 48;
       }
-    });
+      y += 6;
+    }
 
     // Eggs section — full card style so it's impossible to miss, with a
     // progress bar ticking toward hatch.
     if (eggs.length > 0) {
-      const headerY = 80 + items.length * 70 + 14;
+      const headerY = y + 8;
 
       // Divider + header
       this.add.rectangle(GAME_W / 2, headerY - 8, GAME_W - 60, 1, 0x445566);
@@ -286,8 +323,9 @@ export class MainMenuScene extends Phaser.Scene {
       }).setOrigin(0.5);
 
       eggs.forEach((egg, i) => {
-        const y = headerY + 32 + i * 58;
-        if (y + 25 > GAME_H - 70) return;
+        const eggY = headerY + 32 + i * 58;
+        if (eggY + 25 > GAME_H - 70) return;
+        const y = eggY;
 
         const tierData = EGG_TIERS[egg.tier];
         const w = GAME_W - 40;
@@ -333,11 +371,104 @@ export class MainMenuScene extends Phaser.Scene {
     }
   }
 
-  private showItemUseTarget(belt: typeof this.gameState.playerItems[0]): void {
+  /** Draw the USE / BATTLE / TM button for an item card based on its category. */
+  private drawItemUseButton(belt: BattleItem, x: number, y: number): void {
+    const cat = belt.item.category;
+    if (cat === "field") {
+      // Escape rope / repel / map — not usable from town
+      this.add.text(x, y, "FIELD", { fontSize: "8px", fontFamily: "monospace", color: "#666666", fontStyle: "bold" }).setOrigin(0.5);
+      return;
+    }
+    if (cat === "battle") {
+      const bg = this.add.rectangle(x, y, 64, 26, 0x222244).setOrigin(0.5).setStrokeStyle(1, 0x333355);
+      this.add.text(x, y, "BATTLE", { fontSize: "9px", fontFamily: "monospace", color: "#6677aa", fontStyle: "bold" }).setOrigin(0.5);
+      bg.setInteractive();
+      bg.on("pointerdown", () => this.showToast("Only usable in battle."));
+      return;
+    }
+    if (cat === "tm") {
+      const bg = this.add.rectangle(x, y, 64, 26, 0x664422).setOrigin(0.5).setStrokeStyle(1, 0x886644);
+      this.add.text(x, y, "TM", { fontSize: "11px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold" }).setOrigin(0.5);
+      bg.setInteractive();
+      bg.on("pointerdown", () =>
+        this.showToast("TMs can only be used at the Training Centre.")
+      );
+      return;
+    }
+    // medicine, vitamin, stone, candy — pick a roster target
+    const bg = this.add.rectangle(x, y, 64, 26, 0x335588).setOrigin(0.5).setStrokeStyle(1, 0x4477aa);
+    this.add.text(x, y, "USE", { fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5);
+    bg.setInteractive();
+    bg.on("pointerdown", () => this.showItemUseTarget(belt));
+  }
+
+  private showToast(message: string): void {
+    const msg = this.add
+      .text(GAME_W / 2, GAME_H - 120, message, {
+        fontSize: "13px", fontFamily: "monospace", color: "#ffdd44", fontStyle: "bold",
+        stroke: "#000000", strokeThickness: 3, align: "center", wordWrap: { width: GAME_W - 40 },
+      })
+      .setOrigin(0.5)
+      .setDepth(200);
+    this.tweens.add({
+      targets: msg,
+      alpha: 0,
+      duration: 1800,
+      delay: 1200,
+      onComplete: () => msg.destroy(),
+    });
+  }
+
+  /** Predicate: can this item be applied to this pokemon right now? */
+  private canTargetWith(belt: BattleItem, pokemon: BattlePokemon): boolean {
+    const id = belt.item.id;
+    const cat = belt.item.category;
+    switch (cat) {
+      case "medicine":
+        if (id === "revive") return pokemon.currentHP <= 0;
+        return pokemon.currentHP > 0 && pokemon.currentHP < pokemon.maxHP;
+      case "vitamin": {
+        const cfg = VITAMIN_CONFIG[id];
+        if (!cfg) return false;
+        return pokemon.currentHP > 0 && canUseVitamin(pokemon, cfg.stat);
+      }
+      case "stone":
+        return pokemon.currentHP > 0 && getStoneEvolution(pokemon, id) !== null;
+      case "candy":
+        return canUseRareCandy(pokemon, this.gameState.roster);
+      default:
+        return false;
+    }
+  }
+
+  /** Short label for why a pokemon can't be targeted (shown on disabled cards). */
+  private unavailableReason(belt: BattleItem, pokemon: BattlePokemon): string {
+    const id = belt.item.id;
+    const cat = belt.item.category;
+    if (pokemon.currentHP <= 0 && cat !== "medicine") return "Fainted";
+    switch (cat) {
+      case "medicine":
+        if (id === "revive") return pokemon.currentHP > 0 ? "Not fainted" : "";
+        return pokemon.currentHP >= pokemon.maxHP ? "Full HP" : "Fainted";
+      case "vitamin": {
+        const cfg = VITAMIN_CONFIG[id];
+        return cfg ? `${cfg.stat.toUpperCase()} maxed` : "N/A";
+      }
+      case "stone":
+        return "No effect";
+      case "candy":
+        return pokemon.level >= rareCandyCap(this.gameState.roster)
+          ? "At roster cap"
+          : "";
+      default:
+        return "";
+    }
+  }
+
+  private showItemUseTarget(belt: BattleItem): void {
     this.children.removeAll(true);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
 
-    const isRevive = belt.item.id === "revive";
     const icon = this.getItemIcon(belt.item.id);
     this.add.text(GAME_W / 2, 30, `${icon} Use ${belt.item.name} on?`, { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
     this.add.text(GAME_W / 2, 55, `${belt.quantity} remaining`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
@@ -345,28 +476,57 @@ export class MainMenuScene extends Phaser.Scene {
     this.gameState.roster.forEach((pokemon, i) => {
       const y = 90 + i * 65;
       if (y > GAME_H - 100) return;
-      const fainted = pokemon.currentHP <= 0;
-      const fullHP = pokemon.currentHP >= pokemon.maxHP;
-      const canTarget = isRevive ? fainted : (!fainted && !fullHP);
+
+      const canTarget = this.canTargetWith(belt, pokemon);
+      const reason = canTarget ? "" : this.unavailableReason(belt, pokemon);
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 52, canTarget ? 0x222244 : 0x181822, 0.9).setOrigin(0.5).setStrokeStyle(1, canTarget ? 0x444466 : 0x222233);
 
       if (this.textures.exists(pokemon.species.spriteKey)) {
-        // Always full-alpha so sprites stay readable even when the card is
-        // disabled (e.g. all-full-HP roster after a heal).
         const img = this.add.image(GAME_W / 2 - 140, y, pokemon.species.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(GAME_W / 2 - 110, y - 8, pokemon.species.name, { fontSize: "12px", fontFamily: "monospace", color: canTarget ? "#ffffff" : "#555555", fontStyle: "bold" }).setOrigin(0, 0.5);
-      const hpStr = fainted ? "FAINTED" : `${pokemon.currentHP}/${pokemon.maxHP} HP`;
-      this.add.text(GAME_W / 2 - 110, y + 10, hpStr, { fontSize: "10px", fontFamily: "monospace", color: fainted ? "#cc4444" : "#22cc44" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 110, y - 10, pokemon.species.name, { fontSize: "12px", fontFamily: "monospace", color: canTarget ? "#ffffff" : "#555555", fontStyle: "bold" }).setOrigin(0, 0.5);
+      const lvStr = `Lv${pokemon.level}`;
+      const hpStr = pokemon.currentHP <= 0 ? "FAINTED" : `${pokemon.currentHP}/${pokemon.maxHP} HP`;
+      this.add.text(GAME_W / 2 - 110, y + 4, `${lvStr}  ${hpStr}`, { fontSize: "10px", fontFamily: "monospace", color: pokemon.currentHP <= 0 ? "#cc4444" : "#22cc44" }).setOrigin(0, 0.5);
+
+      // Show bonus summary if vitamin
+      if (belt.item.category === "vitamin") {
+        const bonus = pokemon.statBonuses;
+        const parts = [
+          bonus.hp > 0 ? `HP+${bonus.hp}` : null,
+          bonus.atk > 0 ? `A+${bonus.atk}` : null,
+          bonus.def > 0 ? `D+${bonus.def}` : null,
+          bonus.spd > 0 ? `S+${bonus.spd}` : null,
+          bonus.spc > 0 ? `Sp+${bonus.spc}` : null,
+        ].filter(Boolean);
+        if (parts.length > 0) {
+          this.add.text(GAME_W / 2 - 110, y + 18, parts.join(" "), {
+            fontSize: "9px", fontFamily: "monospace", color: "#88aacc",
+          }).setOrigin(0, 0.5);
+        }
+      }
+
+      if (!canTarget && reason) {
+        this.add.text(GAME_W / 2 + 140, y, reason, {
+          fontSize: "9px", fontFamily: "monospace", color: "#886666", fontStyle: "bold",
+        }).setOrigin(1, 0.5);
+      }
 
       if (canTarget) {
         cardBg.setInteractive();
         cardBg.on("pointerdown", () => {
-          const { success } = applyItem(belt.item.id, pokemon);
-          if (success) belt.quantity--;
+          const result = applyItem(belt.item.id, pokemon, { roster: this.gameState.roster });
+          if (result.kind !== "fail") {
+            belt.quantity--;
+            saveGame(this.gameState);
+            if (result.kind === "evolve") {
+              this.showEvolutionAnimation(result.oldName, pokemon, () => this.showScreen("items"));
+              return;
+            }
+          }
           this.showScreen("items");
         });
       }
@@ -379,10 +539,47 @@ export class MainMenuScene extends Phaser.Scene {
     backBg.on("pointerdown", () => this.showScreen("items"));
   }
 
+  /** Shared evolution animation used by level evolution and stone evolution. */
+  private showEvolutionAnimation(oldName: string, pokemon: BattlePokemon, onContinue: () => void): void {
+    this.children.removeAll(true);
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+
+    this.add.text(GAME_W / 2, GAME_H / 2 - 100, "Congratulations!", {
+      fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5);
+
+    this.add.text(GAME_W / 2, GAME_H / 2 - 60, `${oldName} evolved into`, {
+      fontSize: "14px", fontFamily: "monospace", color: "#cccccc",
+    }).setOrigin(0.5);
+
+    this.add.text(GAME_W / 2, GAME_H / 2 - 35, `${pokemon.species.name}!`, {
+      fontSize: "22px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold",
+    }).setOrigin(0.5);
+
+    if (this.textures.exists(pokemon.species.spriteKey)) {
+      const sprite = this.add
+        .image(GAME_W / 2, GAME_H / 2 + 40, pokemon.species.spriteKey)
+        .setDisplaySize(96, 96)
+        .setOrigin(0.5)
+        .setAlpha(0);
+      sprite.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      this.tweens.add({ targets: sprite, alpha: 1, scale: { from: 0.5, to: 1 }, duration: 600, ease: "Back.easeOut" });
+    }
+
+    const tapText = this.add.text(GAME_W / 2, GAME_H / 2 + 120, "Tap to continue", {
+      fontSize: "14px", fontFamily: "monospace", color: "#888888",
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: tapText, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
+
+    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0).setOrigin(0.5);
+    overlay.setInteractive();
+    overlay.once("pointerdown", onContinue);
+  }
+
   // --- Item Shop ---
   private drawShop(): void {
-    this.add.text(GAME_W / 2, 30, "POKEMART", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 55, `Gold: ${this.gameState.gold}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 25, "POKEMART", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 48, `Gold: ${this.gameState.gold}`, { fontSize: "13px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
 
     const unlocked = getWorldsUnlocked(this.gameState.worlds);
     const available = getAvailableShopItems(unlocked);
@@ -392,44 +589,79 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    available.forEach((shopItem, i) => {
-      const item = ITEMS[shopItem.itemId];
-      const y = 95 + i * 65;
-      const canAfford = this.gameState.gold >= shopItem.cost;
+    // Group by category for visual clarity
+    const categoryOrder: ItemCategory[] = ["medicine", "field", "battle", "vitamin", "candy", "stone", "tm"];
+    const categoryLabels: Record<ItemCategory, string> = {
+      medicine: "MEDICINE",
+      field: "FIELD",
+      battle: "BATTLE",
+      vitamin: "VITAMINS",
+      candy: "CANDY",
+      stone: "STONES",
+      tm: "TMs",
+    };
 
-      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 50, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
+    const grouped = new Map<ItemCategory, typeof available>();
+    for (const entry of available) {
+      const cat = ITEMS[entry.itemId].category;
+      if (!grouped.has(cat)) grouped.set(cat, []);
+      grouped.get(cat)!.push(entry);
+    }
 
-      // Item icon
-      const iconText = this.getItemIcon(shopItem.itemId);
-      this.add.text(GAME_W / 2 - 155, y, iconText, { fontSize: "18px", fontFamily: "monospace" }).setOrigin(0.5);
+    let y = 70;
+    const maxY = GAME_H - 55;
+    for (const cat of categoryOrder) {
+      const list = grouped.get(cat);
+      if (!list || list.length === 0) continue;
 
-      this.add.text(GAME_W / 2 - 130, y - 8, item.name, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 - 130, y + 12, item.description, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 + 140, y, `${shopItem.cost}g`, { fontSize: "14px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
+      this.add.text(18, y, categoryLabels[cat], {
+        fontSize: "10px", fontFamily: "monospace", color: "#7788aa", fontStyle: "bold",
+      });
+      y += 13;
 
-      if (canAfford) {
-        cardBg.setInteractive();
-        cardBg.on("pointerdown", () => {
-          this.gameState.gold -= shopItem.cost;
-          const existing = this.gameState.playerItems.find((b) => b.item.id === shopItem.itemId);
-          if (existing) existing.quantity++;
-          else this.gameState.playerItems.push({ item: ITEMS[shopItem.itemId], quantity: 1 });
-          saveGame(this.gameState);
-          this.showScreen("shop");
-        });
+      for (const shopItem of list) {
+        if (y + 18 > maxY) break;
+        const item = ITEMS[shopItem.itemId];
+        const canAfford = this.gameState.gold >= shopItem.cost;
+
+        const cardBg = this.add
+          .rectangle(GAME_W / 2, y + 16, 354, 32, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9)
+          .setOrigin(0.5)
+          .setStrokeStyle(1, 0x444466);
+
+        // icon
+        const iconText = this.getItemIcon(shopItem.itemId);
+        this.add.text(22, y + 16, iconText, { fontSize: "14px", fontFamily: "monospace" }).setOrigin(0.5);
+
+        // name + description inline
+        this.add
+          .text(40, y + 7, item.name, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" })
+          .setOrigin(0, 0.5);
+        this.add
+          .text(40, y + 23, item.description, { fontSize: "8px", fontFamily: "monospace", color: "#888888" })
+          .setOrigin(0, 0.5);
+
+        // cost
+        this.add
+          .text(GAME_W - 15, y + 16, `${shopItem.cost}g`, { fontSize: "12px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" })
+          .setOrigin(1, 0.5);
+
+        if (canAfford) {
+          cardBg.setInteractive();
+          cardBg.on("pointerdown", () => {
+            this.gameState.gold -= shopItem.cost;
+            const existing = this.gameState.playerItems.find((b) => b.item.id === shopItem.itemId);
+            if (existing) existing.quantity++;
+            else this.gameState.playerItems.push({ item: ITEMS[shopItem.itemId], quantity: 1 });
+            saveGame(this.gameState);
+            this.showScreen("shop");
+          });
+        }
+
+        y += 34;
       }
-    });
-
-    // Show current inventory
-    const invY = 95 + available.length * 65 + 20;
-    this.add.text(20, invY, "INVENTORY:", { fontSize: "11px", fontFamily: "monospace", color: "#888888" });
-    let idx = 0;
-    this.gameState.playerItems.forEach((belt) => {
-      if (belt.quantity <= 0) return;
-      const icon = this.getItemIcon(belt.item.id);
-      this.add.text(20, invY + 18 + idx * 18, `${icon} ${belt.item.name} x${belt.quantity}`, { fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa" });
-      idx++;
-    });
+      y += 4;
+    }
   }
 
   // --- Pokemon Shop ---
@@ -716,25 +948,27 @@ export class MainMenuScene extends Phaser.Scene {
     });
 
     // Available moves section
-    const availY = sectionY + 20 + pokemon.moves.length * 38 + 15;
+    const availY = sectionY + 20 + pokemon.moves.length * 38 + 10;
     this.add.text(15, availY, "AVAILABLE TO LEARN", { fontSize: "11px", fontFamily: "monospace", color: "#88cc88", fontStyle: "bold" });
 
     const unlearned = trainable.filter((t) => !t.known);
 
+    let afterMovesY = availY + 20;
     if (unlearned.length === 0) {
       this.add.text(GAME_W / 2, availY + 30, "No new moves available yet.\nLevel up to unlock more!", { fontSize: "11px", fontFamily: "monospace", color: "#666666", align: "center" }).setOrigin(0.5);
+      afterMovesY = availY + 55;
     } else {
       unlearned.forEach((entry, i) => {
-        const y = availY + 22 + i * 42;
-        if (y > GAME_H - 90) return;
+        const y = availY + 22 + i * 36;
+        if (y > GAME_H - 150) return;
 
         const canAfford = this.gameState.gold >= entry.cost;
         const hasMoveSlot = pokemon.moves.length < 4;
         const canLearn = canAfford && hasMoveSlot;
 
-        this.add.rectangle(GAME_W / 2, y, 340, 36, canLearn ? 0x223322 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canLearn ? 0x446644 : 0x333333);
+        this.add.rectangle(GAME_W / 2, y, 340, 32, canLearn ? 0x223322 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canLearn ? 0x446644 : 0x333333);
 
-        this.add.text(25, y - 7, entry.move.name, { fontSize: "12px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+        this.add.text(25, y - 6, entry.move.name, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
         const typeStr = entry.move.type.charAt(0).toUpperCase() + entry.move.type.slice(1);
         this.add.text(25, y + 8, `${typeStr}  Pow:${entry.move.power}  CD:${entry.move.cooldown}  Lv${entry.level}`, { fontSize: "8px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
 
@@ -742,7 +976,7 @@ export class MainMenuScene extends Phaser.Scene {
         this.add.text(GAME_W - 95, y, `${entry.cost}g`, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
 
         if (canLearn) {
-          const learnBg = this.add.rectangle(GAME_W - 40, y, 55, 24, 0x336633).setOrigin(0.5).setStrokeStyle(1, 0x448844);
+          const learnBg = this.add.rectangle(GAME_W - 40, y, 55, 22, 0x336633).setOrigin(0.5).setStrokeStyle(1, 0x448844);
           this.add.text(GAME_W - 40, y, "LEARN", { fontSize: "9px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold" }).setOrigin(0.5);
           learnBg.setInteractive();
           learnBg.on("pointerdown", () => {
@@ -754,6 +988,50 @@ export class MainMenuScene extends Phaser.Scene {
           });
         } else if (!hasMoveSlot) {
           this.add.text(GAME_W - 40, y, "FULL", { fontSize: "9px", fontFamily: "monospace", color: "#886644", fontStyle: "bold" }).setOrigin(0.5);
+        }
+      });
+      afterMovesY = availY + 22 + unlearned.length * 36;
+    }
+
+    // TMs section
+    const ownedTMs = this.gameState.playerItems.filter(
+      (b) => b.quantity > 0 && b.item.category === "tm"
+    );
+    if (ownedTMs.length > 0) {
+      const tmY = afterMovesY + 6;
+      this.add.text(15, tmY, "USE TMs", {
+        fontSize: "11px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold",
+      });
+
+      ownedTMs.forEach((belt, i) => {
+        const y = tmY + 18 + i * 32;
+        if (y > GAME_H - 80) return;
+
+        const move = getTMMove(belt.item);
+        if (!move) return;
+
+        const check = canUseTM(pokemon, move.id);
+        const canAfford = true; // TMs consume the item, not gold
+        const canTeach = check.ok && canAfford;
+
+        this.add.rectangle(GAME_W / 2, y, 340, 28, canTeach ? 0x332a11 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canTeach ? 0x665522 : 0x333333);
+
+        this.add.text(25, y - 5, `${belt.item.name.replace("TM ", "")} x${belt.quantity}`, {
+          fontSize: "10px", fontFamily: "monospace", color: canTeach ? "#ffffff" : "#666666", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
+        const typeStr = move.type.charAt(0).toUpperCase() + move.type.slice(1);
+        this.add.text(25, y + 8, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, {
+          fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        }).setOrigin(0, 0.5);
+
+        if (canTeach) {
+          const teachBg = this.add.rectangle(GAME_W - 40, y, 55, 22, 0x554422).setOrigin(0.5).setStrokeStyle(1, 0x886644);
+          this.add.text(GAME_W - 40, y, "TEACH", { fontSize: "9px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold" }).setOrigin(0.5);
+          teachBg.setInteractive();
+          teachBg.on("pointerdown", () => this.applyTM(rosterIndex, belt));
+        } else {
+          const label = check.label ?? "";
+          this.add.text(GAME_W - 40, y, label, { fontSize: "8px", fontFamily: "monospace", color: "#886644", fontStyle: "bold" }).setOrigin(0.5);
         }
       });
     }
@@ -771,56 +1049,82 @@ export class MainMenuScene extends Phaser.Scene {
     if (!evoInfo || !evoInfo.canEvolve || this.gameState.gold < evoInfo.cost) return;
 
     this.gameState.gold -= evoInfo.cost;
-
     const oldName = pokemon.species.name;
-
-    // Change species
-    pokemon.species = evoInfo.evolvedSpecies;
-
-    // Recalculate stats, preserve HP ratio
-    const hpRatio = pokemon.currentHP / pokemon.maxHP;
-    const newStats = calculateAllStats(pokemon.species.baseStats, pokemon.level);
-    pokemon.stats = newStats;
-    pokemon.maxHP = newStats.hp;
-    pokemon.currentHP = Math.max(1, Math.round(hpRatio * pokemon.maxHP));
-
-    // Keep existing moves — they carry over
-    // Reset cooldowns
-    pokemon.cooldowns = pokemon.moves.map(() => 0);
-
+    evolveIntoSpecies(pokemon, evoInfo.evolvedSpecies);
     saveGame(this.gameState);
 
-    // Show evolution animation
+    this.showEvolutionAnimation(oldName, pokemon, () => this.drawTrainMoves(rosterIndex));
+  }
+
+  private applyTM(rosterIndex: number, belt: BattleItem): void {
+    const pokemon = this.gameState.roster[rosterIndex];
+    const move = getTMMove(belt.item);
+    if (!move) return;
+
+    const check = canUseTM(pokemon, move.id);
+    if (!check.ok) return;
+
+    if (pokemon.moves.length < 4) {
+      pokemon.moves.push(move);
+      pokemon.cooldowns.push(0);
+      belt.quantity--;
+      saveGame(this.gameState);
+      this.drawTrainMoves(rosterIndex);
+      return;
+    }
+
+    // Party has 4 moves — ask which to forget
+    this.showTMForgetPicker(rosterIndex, belt, move);
+  }
+
+  private showTMForgetPicker(rosterIndex: number, belt: BattleItem, newMove: ReturnType<typeof getMove>): void {
     this.children.removeAll(true);
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
 
-    this.add.text(GAME_W / 2, GAME_H / 2 - 100, "Congratulations!", {
-      fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    const pokemon = this.gameState.roster[rosterIndex];
+
+    this.add.text(GAME_W / 2, 30, `TEACH ${newMove.name.toUpperCase()}?`, {
+      fontSize: "16px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold",
+    }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 55, `${pokemon.species.name} already knows 4 moves.`, {
+      fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa",
+    }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 72, "Pick a move to forget:", {
+      fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa",
     }).setOrigin(0.5);
 
-    this.add.text(GAME_W / 2, GAME_H / 2 - 60, `${oldName} evolved into`, {
-      fontSize: "14px", fontFamily: "monospace", color: "#cccccc",
-    }).setOrigin(0.5);
+    pokemon.moves.forEach((move, i) => {
+      const y = 110 + i * 70;
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 54, 0x332244, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x554466);
+      this.add.text(25, y - 14, move.name, {
+        fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      const typeStr = move.type.charAt(0).toUpperCase() + move.type.slice(1);
+      this.add.text(25, y + 5, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, {
+        fontSize: "9px", fontFamily: "monospace", color: "#888888",
+      }).setOrigin(0, 0.5);
 
-    this.add.text(GAME_W / 2, GAME_H / 2 - 35, `${pokemon.species.name}!`, {
-      fontSize: "22px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold",
-    }).setOrigin(0.5);
+      const btn = this.add.rectangle(GAME_W - 55, y, 80, 32, 0x663333).setOrigin(0.5).setStrokeStyle(1, 0x884444);
+      this.add.text(GAME_W - 55, y, "FORGET", {
+        fontSize: "10px", fontFamily: "monospace", color: "#ff8888", fontStyle: "bold",
+      }).setOrigin(0.5);
+      btn.setInteractive();
+      btn.on("pointerdown", () => {
+        pokemon.moves[i] = newMove;
+        pokemon.cooldowns[i] = 0;
+        belt.quantity--;
+        saveGame(this.gameState);
+        this.drawTrainMoves(rosterIndex);
+      });
 
-    if (this.textures.exists(pokemon.species.spriteKey)) {
-      const sprite = this.add.image(GAME_W / 2, GAME_H / 2 + 40, pokemon.species.spriteKey)
-        .setDisplaySize(96, 96).setOrigin(0.5).setAlpha(0);
-      sprite.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
-      this.tweens.add({ targets: sprite, alpha: 1, scale: { from: 0.5, to: 1 }, duration: 600, ease: "Back.easeOut" });
-    }
+      // Suppress unused variable warning for cardBg
+      void cardBg;
+    });
 
-    const tapText = this.add.text(GAME_W / 2, GAME_H / 2 + 120, "Tap to continue", {
-      fontSize: "14px", fontFamily: "monospace", color: "#888888",
-    }).setOrigin(0.5);
-    this.tweens.add({ targets: tapText, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
-
-    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0).setOrigin(0.5);
-    overlay.setInteractive();
-    overlay.once("pointerdown", () => this.drawTrainMoves(rosterIndex));
+    const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 45, 160, 38, 0x553333).setOrigin(0.5).setStrokeStyle(1, 0x774444);
+    this.add.text(GAME_W / 2, GAME_H - 45, "CANCEL", { fontSize: "13px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0.5);
+    backBg.setInteractive();
+    backBg.on("pointerdown", () => this.drawTrainMoves(rosterIndex));
   }
 
   private startAdventure(): void {
@@ -855,13 +1159,39 @@ export class MainMenuScene extends Phaser.Scene {
 
   private getItemIcon(itemId: string): string {
     switch (itemId) {
-      case "potion": return "\u2764"; // heart
-      case "super_potion": return "\u2764";
-      case "revive": return "\u2606"; // star
-      case "escape_rope": return "\u21b6"; // arrow
-      case "repel": return "\u2668"; // hotsprings
-      case "dungeon_map": return "\u25a9"; // grid
-      default: return "\u25a0"; // square
+      case "potion":
+      case "super_potion":
+        return "\u2764"; // heart
+      case "revive":
+        return "\u2606"; // star
+      case "escape_rope":
+        return "\u21b6"; // return arrow
+      case "repel":
+        return "\u2668"; // hotsprings
+      case "dungeon_map":
+        return "\u25a9"; // grid
+      case "rare_candy":
+        return "\u272a"; // sparkle
+      case "hp_up":
+      case "protein":
+      case "iron":
+      case "carbos":
+      case "calcium":
+        return "\u25b2"; // triangle (vitamin)
+      case "fire_stone":
+      case "water_stone":
+      case "thunder_stone":
+      case "leaf_stone":
+      case "moon_stone":
+        return "\u25c6"; // diamond
+      case "x_attack":
+      case "x_defend":
+      case "x_speed":
+      case "x_special":
+        return "\u2a2f"; // multiplication x
+      default:
+        if (itemId.startsWith("tm_")) return "\u25a3"; // square with dot
+        return "\u25a0"; // square
     }
   }
 }

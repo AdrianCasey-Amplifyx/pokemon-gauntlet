@@ -249,16 +249,75 @@ Secondary menus accessed from **Pokemon**:
 
 ### 6.1 PokeMart (Items)
 
-Items are world-gated so that the store grows as the player progresses:
+Items are world-gated so that the store grows as the player progresses. The PokeMart UI groups items by category for scannability.
+
+**Medicine**
 
 | Item | Cost | Unlocked after |
 |---|---|---|
 | Potion | 30 | World 0 |
+| Super Potion | 80 | World 1 |
+| Revive | 120 | World 2 |
+
+**Field**
+
+| Item | Cost | Unlocked after |
+|---|---|---|
 | Escape Rope | 40 | World 0 |
 | Repel | 50 | World 0 |
 | Map | 75 | World 0 |
-| Super Potion | 80 | World 1 |
-| Revive | 120 | World 2 |
+
+**Battle items** (usable only in battle, +1 stage = ×1.5 until battle ends, capped at 2 stages)
+
+| Item | Cost | Unlocked after |
+|---|---|---|
+| X Attack | 100 | World 1 |
+| X Defend | 100 | World 1 |
+| X Speed | 100 | World 1 |
+| X Special | 120 | World 1 |
+
+**Vitamins** (permanent stat boost, applied from the Items menu, caps: +25 HP / +15 per other stat)
+
+| Item | Cost | Unlocked after | Effect |
+|---|---|---|---|
+| HP Up | 400 | World 1 | +5 max HP per use |
+| Protein | 400 | World 1 | +3 Attack per use |
+| Iron | 400 | World 1 | +3 Defense per use |
+| Carbos | 400 | World 1 | +3 Speed per use |
+| Calcium | 400 | World 1 | +3 Special per use |
+
+**Candy**
+
+| Item | Cost | Unlocked after | Effect |
+|---|---|---|---|
+| Rare Candy | 700 | World 2 | Level up by 1, **capped at the highest level in your roster** (so it catches stragglers up, doesn't create a new ceiling) |
+
+**Evolution Stones** (used from the Items menu on a matching pokemon)
+
+| Item | Cost | Unlocked after | Evolves |
+|---|---|---|---|
+| Fire Stone | 500 | World 2 | Vulpix → Ninetales, Growlithe → Arcanine, Eevee → Flareon |
+| Water Stone | 500 | World 2 | Poliwhirl → Poliwrath, Shellder → Cloyster, Staryu → Starmie, Eevee → Vaporeon |
+| Thunder Stone | 500 | World 2 | Pikachu → Raichu, Eevee → Jolteon |
+| Leaf Stone | 500 | World 2 | Gloom → Vileplume, Weepinbell → Victreebel, Exeggcute → Exeggutor |
+| Moon Stone | 600 | World 3 | Clefairy → Clefable, Jigglypuff → Wigglytuff, Nidorino → Nidoking, Nidorina → Nidoqueen |
+
+**TMs** (purchasable items; **used at the Training Centre**, not the Items menu). Each TM is single-use and teaches a specific move. TMs are **type-matched only** — a pokemon must share at least one type with the move to learn it.
+
+| TM | Move | Cost | Unlocked after |
+|---|---|---|---|
+| TM Surf | Surf (Water, Pow 60, CD 2) | 800 | World 2 |
+| TM Shadow Ball | Shadow Ball (Ghost, Pow 55, CD 2) | 800 | World 3 |
+| TM Thunderbolt | Thunderbolt (Electric, Pow 60, CD 2) | 900 | World 2 |
+| TM Flamethrower | Flamethrower (Fire, Pow 60, CD 2) | 900 | World 2 |
+| TM Ice Beam | Ice Beam (Ice, Pow 60, CD 2) | 900 | World 2 |
+| TM Psychic | Psychic (Psychic, Pow 60, CD 2) | 900 | World 3 |
+| TM Earthquake | Earthquake (Ground, Pow 65, CD 2) | 1000 | World 3 |
+| TM Fire Blast | Fire Blast (Fire, Pow 80, CD 3) | 1200 | World 4 |
+| TM Hydro Pump | Hydro Pump (Water, Pow 80, CD 3) | 1200 | World 4 |
+| TM Blizzard | Blizzard (Ice, Pow 80, CD 3) | 1200 | World 4 |
+| TM Thunder | Thunder (Electric, Pow 80, CD 3) | 1200 | World 4 |
+| TM Hyper Beam | Hyper Beam (Normal, Pow 85, CD 3) | 1500 | World 4 |
 
 ### 6.2 Buy Pokemon
 
@@ -314,15 +373,25 @@ Fast early levels, steep late game. Leveling up recalculates stats and grants th
 
 ## 7. Items
 
-### 7.1 Battle Items (usable in `BattleScene`)
+All items carry an `ItemCategory` (`medicine` · `field` · `vitamin` · `stone` · `candy` · `battle` · `tm`) which drives filtering, UI behaviour, and the `applyItem` dispatcher in `src/data/items.ts`.
 
-| Item | Effect |
-|---|---|
-| Potion | Heal 30 HP (cannot revive or overheal) |
-| Super Potion | Heal 60 HP |
-| Revive | Restore a fainted Pokemon to 25% max HP |
+### 7.1 Battle-usable (`BattleScene` items menu)
 
-Using a battle item costs the player's turn.
+The battle items panel only shows `medicine` and `battle` categories. Everything else is filtered out (field items used to leak into this panel and silently fail — now fixed).
+
+| Item | Category | Effect |
+|---|---|---|
+| Potion | medicine | Heal 30 HP (cannot revive or overheal) |
+| Super Potion | medicine | Heal 60 HP |
+| Revive | medicine | Restore a fainted Pokemon to 25% max HP |
+| X Attack | battle | +1 Attack stage (×1.5) for the rest of this battle |
+| X Defend | battle | +1 Defense stage for the rest of this battle |
+| X Speed | battle | +1 Speed stage for the rest of this battle (affects turn order) |
+| X Special | battle | +1 Special stage for the rest of this battle |
+
+Battle stage boosts cap at +2 (×2.25). They are tracked in `BattlePokemon.battleBoosts: StageBoosts` and reset at the start of every battle on the player's roster (enemies never boost). `damageCalc.ts` applies the multiplier to atk/spc and defender def/spc; `battleStateMachine.resolveTurn` applies it to speed.
+
+Using any battle item costs the player's turn.
 
 ### 7.2 Field Items (usable in `MapScene`)
 
@@ -332,7 +401,26 @@ Using a battle item costs the player's turn.
 | Repel | Suppress all encounter rolls for the next 20 steps |
 | Map | Reveal every tile in the current dungeon |
 
-### 7.3 Starter Inventory
+### 7.3 Menu-only items (Items screen in town)
+
+These items can't be used during battle or on the map — only from the Items screen's USE button, which opens a roster picker filtered by eligibility.
+
+| Item | Category | Effect |
+|---|---|---|
+| HP Up / Protein / Iron / Carbos / Calcium | vitamin | Permanent stat bonus, tracked in `BattlePokemon.statBonuses: Stats`, layered on top of level-based stats via `applyStatBonuses`. Preserved across level-ups, evolution, and save/load. Caps: +25 HP / +15 per other stat. |
+| Rare Candy | candy | Raises level by 1. **Capped** at the highest level in the current roster — you can't use it to exceed your best pokemon. |
+| Fire / Water / Thunder / Leaf / Moon Stone | stone | Evolves a matching species via `getStoneEvolution(pokemon, stoneId)`. Goes through the shared `evolveIntoSpecies` helper in `statCalc.ts`, so vitamin bonuses and HP ratio are preserved exactly like a level-based evolution. |
+| TM *<move>* | tm | Appears in the Items screen but USE triggers a dialog pointing to the Training Centre. Actual teaching happens in the Train screen's new "Use TMs" panel. Single-use; consumes the TM on apply. |
+
+### 7.4 Training Centre — TM teaching
+
+The Train screen (per pokemon) now has a third section after Current Moves / Available to Learn: **Use TMs**. It lists every TM the player owns, each with a TEACH button. Eligibility comes from `canUseTM(pokemon, moveId)`:
+
+- **Already knows** → disabled grey label.
+- **Type mismatch** → disabled grey label. TMs are **type-matched only**: the pokemon must share at least one type with the move's type.
+- **OK** → enabled button. On click, if the pokemon has < 4 moves the TM is appended; otherwise a "Which move should be forgotten?" picker appears (same style as the existing FORGET button), then replaces the chosen move.
+
+### 7.5 Starter Inventory
 
 New games begin with: **3 Potions**, **1 Escape Rope**, **100 gold**.
 
@@ -346,12 +434,14 @@ Key types from `src/types.ts`:
 PokemonSpecies {
   id, name, types[], baseStats, movePool[],
   catchRate, rarity, spriteKey,
-  evolvesFrom?, evolutionLevel?
+  evolvesFrom?, evolutionLevel?, evolutionStone?
 }
 
 BattlePokemon {
   species, level, currentXP, currentHP, maxHP,
-  stats, moves[], cooldowns[], statusEffects[]
+  stats, moves[], cooldowns[], statusEffects[],
+  statBonuses: Stats,        // permanent vitamin bonuses, persisted
+  battleBoosts: StageBoosts  // temporary X-item stages, reset per battle
 }
 
 MoveData {
@@ -458,7 +548,7 @@ These ideas were in earlier drafts or are natural next steps — **none of them 
 - **Trainer battles** as a distinct room type with scripted teams and AI switching, separate from wild encounters.
 - **Gym Leader bosses per world** with signature moves and held items (current bosses are rare species, not themed leaders).
 - **Held items** (Charcoal, Leftovers, Focus Sash, Quick Claw, Scope Lens…) granting passive effects.
-- **TMs** as an alternative move-learning path alongside the Train shop.
+- **Held items** (leftovers, eviolite, etc.) for passive battle effects.
 - **Research tasks** — ongoing objectives unlocking Pokemon or upgrades.
 - **Professor's Lab global upgrades** (+% HP/Atk/Spd, more item slots, more bench slots, better catch rates, etc.).
 - **Speed timer per turn** for faster combat (currently turns are untimed).

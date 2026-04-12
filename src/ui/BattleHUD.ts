@@ -50,6 +50,9 @@ export class BattleHUD {
   private playerStatusText: Phaser.GameObjects.Text | null = null;
   private enemyStatusText: Phaser.GameObjects.Text | null = null;
 
+  // Battle stat boost indicator (X items)
+  private playerBoostText: Phaser.GameObjects.Text | null = null;
+
   // References
   private callbacks!: HUDCallbacks;
   private playerParty!: BattlePokemon[];
@@ -161,6 +164,7 @@ export class BattleHUD {
 
     this.updatePartyDots();
     this.updateEnemyPartyDots();
+    this.updateStatBoostIndicator(playerPokemon);
   }
 
   private createActionButton(
@@ -224,6 +228,33 @@ export class BattleHUD {
     this.updateMoveButtons(playerPokemon);
     this.updatePartyDots();
     this.updateEnemyPartyDots();
+    this.updateStatBoostIndicator(playerPokemon);
+  }
+
+  /** Show ATK/DEF/SPD/SPC arrows above the active player sprite when X items are active. */
+  updateStatBoostIndicator(playerPokemon: BattlePokemon): void {
+    if (this.playerBoostText) {
+      this.playerBoostText.destroy();
+      this.playerBoostText = null;
+    }
+
+    const boosts = playerPokemon.battleBoosts;
+    const parts: string[] = [];
+    if (boosts.atk > 0) parts.push(`ATK${"▲".repeat(boosts.atk)}`);
+    if (boosts.def > 0) parts.push(`DEF${"▲".repeat(boosts.def)}`);
+    if (boosts.spd > 0) parts.push(`SPD${"▲".repeat(boosts.spd)}`);
+    if (boosts.spc > 0) parts.push(`SPC${"▲".repeat(boosts.spc)}`);
+
+    if (parts.length === 0) return;
+
+    this.playerBoostText = this.scene.add
+      .text(GAME_W / 2 - 40, 305, parts.join(" "), {
+        fontSize: "11px",
+        fontFamily: "monospace",
+        color: "#ffdd44",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
   }
 
   updateMoveButtons(pokemon: BattlePokemon): void {
@@ -503,17 +534,25 @@ export class BattleHUD {
     const startY = 180;
     const gap = 90;
 
-    const hasItems = this.playerItems.some((b) => b.quantity > 0);
-    if (!hasItems) {
+    // Only medicine + battle items are usable in battle. This also hides
+    // escape rope / repel / map from the battle menu (previously they appeared
+    // here and silently failed when used).
+    const usableIndices: number[] = [];
+    this.playerItems.forEach((belt, i) => {
+      if (belt.quantity <= 0) return;
+      if (belt.item.category !== "medicine" && belt.item.category !== "battle") return;
+      usableIndices.push(i);
+    });
+
+    if (usableIndices.length === 0) {
       const noItems = this.scene.add
-        .text(GAME_W / 2, 300, "No items left!", { fontSize: "16px", fontFamily: "monospace", color: "#888888" })
+        .text(GAME_W / 2, 300, "No usable items!", { fontSize: "16px", fontFamily: "monospace", color: "#888888" })
         .setOrigin(0.5);
       this.itemOverlay.add(noItems);
     } else {
-      this.playerItems.forEach((belt, i) => {
-        if (belt.quantity <= 0) return;
-        const y = startY + i * gap;
-        const card = this.createItemCard(belt, GAME_W / 2, y, i);
+      usableIndices.forEach((itemIdx, slot) => {
+        const y = startY + slot * gap;
+        const card = this.createItemCard(this.playerItems[itemIdx], GAME_W / 2, y, itemIdx);
         this.itemOverlay!.add(card);
       });
     }
@@ -548,7 +587,16 @@ export class BattleHUD {
     cardBg.on("pointerout", () => cardBg.setStrokeStyle(2, 0x665544));
     cardBg.on("pointerdown", () => {
       this.closeItemPanel();
-      this.showItemTargetPanel(itemIndex);
+      // Battle items (X Attack etc) apply directly to the active battler —
+      // no target picker. Medicine still shows the party picker.
+      if (belt.item.category === "battle") {
+        // Resolve the current active index via the live playerActiveIndex lookup
+        // that BattleScene maintains — we piggyback on callbacks.onItemSelect
+        // with a synthetic "active index" sentinel of -1.
+        this.callbacks.onItemSelect(itemIndex, -1);
+      } else {
+        this.showItemTargetPanel(itemIndex);
+      }
     });
 
     return container;

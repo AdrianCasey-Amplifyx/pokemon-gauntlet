@@ -1,4 +1,4 @@
-import type { ShopPokemon, ShopItem, BattlePokemon, PokemonSpecies, MoveData } from "../types.ts";
+import type { ShopPokemon, ShopItem, BattlePokemon, PokemonSpecies, MoveData, Stats } from "../types.ts";
 import { getPokemon, POKEMON } from "./pokemon.ts";
 import { getMove } from "./moves.ts";
 
@@ -12,12 +12,52 @@ function getPokemonCost(species: PokemonSpecies): number {
 
 // Items available, gated by world progress
 export const SHOP_ITEMS_SCALED: (ShopItem & { worldRequired: number })[] = [
+  // Medicine
   { itemId: "potion", cost: 30, worldRequired: 0 },
+  { itemId: "super_potion", cost: 80, worldRequired: 1 },
+  { itemId: "revive", cost: 120, worldRequired: 2 },
+
+  // Field
   { itemId: "escape_rope", cost: 40, worldRequired: 0 },
   { itemId: "repel", cost: 50, worldRequired: 0 },
   { itemId: "dungeon_map", cost: 75, worldRequired: 0 },
-  { itemId: "super_potion", cost: 80, worldRequired: 1 },
-  { itemId: "revive", cost: 120, worldRequired: 2 },
+
+  // Battle items
+  { itemId: "x_attack", cost: 100, worldRequired: 1 },
+  { itemId: "x_defend", cost: 100, worldRequired: 1 },
+  { itemId: "x_speed", cost: 100, worldRequired: 1 },
+  { itemId: "x_special", cost: 120, worldRequired: 1 },
+
+  // Vitamins
+  { itemId: "hp_up", cost: 400, worldRequired: 1 },
+  { itemId: "protein", cost: 400, worldRequired: 1 },
+  { itemId: "iron", cost: 400, worldRequired: 1 },
+  { itemId: "carbos", cost: 400, worldRequired: 1 },
+  { itemId: "calcium", cost: 400, worldRequired: 1 },
+
+  // Candy
+  { itemId: "rare_candy", cost: 700, worldRequired: 2 },
+
+  // Stones
+  { itemId: "fire_stone", cost: 500, worldRequired: 2 },
+  { itemId: "water_stone", cost: 500, worldRequired: 2 },
+  { itemId: "thunder_stone", cost: 500, worldRequired: 2 },
+  { itemId: "leaf_stone", cost: 500, worldRequired: 2 },
+  { itemId: "moon_stone", cost: 600, worldRequired: 3 },
+
+  // TMs
+  { itemId: "tm_surf", cost: 800, worldRequired: 2 },
+  { itemId: "tm_shadow_ball", cost: 800, worldRequired: 3 },
+  { itemId: "tm_thunderbolt", cost: 900, worldRequired: 2 },
+  { itemId: "tm_flamethrower", cost: 900, worldRequired: 2 },
+  { itemId: "tm_ice_beam", cost: 900, worldRequired: 2 },
+  { itemId: "tm_psychic", cost: 900, worldRequired: 3 },
+  { itemId: "tm_earthquake", cost: 1000, worldRequired: 3 },
+  { itemId: "tm_fire_blast", cost: 1200, worldRequired: 4 },
+  { itemId: "tm_hydro_pump", cost: 1200, worldRequired: 4 },
+  { itemId: "tm_blizzard", cost: 1200, worldRequired: 4 },
+  { itemId: "tm_thunder", cost: 1200, worldRequired: 4 },
+  { itemId: "tm_hyper_beam", cost: 1500, worldRequired: 4 },
 ];
 
 /** Get Pokemon available in shop — must have been SEEN in battle and not already owned */
@@ -121,4 +161,63 @@ function getEvolutionCost(species: PokemonSpecies): number {
   const bst = s.hp + s.atk + s.def + s.spd + s.spc;
   const rarityMult = species.rarity === "rare" ? 2 : species.rarity === "uncommon" ? 1.5 : 1;
   return Math.floor((bst / 4 + 20) * rarityMult);
+}
+
+// --- Vitamins ---
+
+const VITAMIN_CAPS: Record<keyof Stats, number> = {
+  hp: 25,
+  atk: 15,
+  def: 15,
+  spd: 15,
+  spc: 15,
+};
+
+/** True if the pokemon is below the cap for that vitamin stat. */
+export function canUseVitamin(pokemon: BattlePokemon, stat: keyof Stats): boolean {
+  return pokemon.statBonuses[stat] < VITAMIN_CAPS[stat];
+}
+
+// --- TMs ---
+
+export interface TMCheckResult {
+  ok: boolean;
+  reason?: "already_knows" | "type_mismatch" | "unknown_move";
+  label?: string; // short label for UI disabled state
+}
+
+/**
+ * TMs are type-matched only: the pokemon must share at least one type with
+ * the move's type. Also must not already know the move.
+ */
+export function canUseTM(pokemon: BattlePokemon, moveId: string): TMCheckResult {
+  let move: MoveData;
+  try {
+    move = getMove(moveId);
+  } catch {
+    return { ok: false, reason: "unknown_move", label: "Unknown" };
+  }
+
+  if (pokemon.moves.some((m) => m.id === moveId)) {
+    return { ok: false, reason: "already_knows", label: "Already knows" };
+  }
+
+  if (!pokemon.species.types.includes(move.type)) {
+    return { ok: false, reason: "type_mismatch", label: "Type mismatch" };
+  }
+
+  return { ok: true };
+}
+
+// --- Rare Candy ---
+
+/** Returns the max level a Rare Candy can take a pokemon to (highest in roster). */
+export function rareCandyCap(roster: BattlePokemon[]): number {
+  return roster.reduce((m, p) => Math.max(m, p.level), 1);
+}
+
+/** True if Rare Candy would actually level this pokemon up without exceeding the cap. */
+export function canUseRareCandy(pokemon: BattlePokemon, roster: BattlePokemon[]): boolean {
+  if (pokemon.currentHP <= 0) return false;
+  return pokemon.level < rareCandyCap(roster);
 }

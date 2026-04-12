@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calculateDamage } from "../src/core/damageCalc.ts";
+import { calculateDamage, stageMultiplier } from "../src/core/damageCalc.ts";
 import { createBattlePokemon } from "../src/core/statCalc.ts";
 import { getPokemon } from "../src/data/pokemon.ts";
 import { getMove } from "../src/data/moves.ts";
@@ -80,5 +80,49 @@ describe("calculateDamage", () => {
 
     // Abra has 105 Spc but 20 Atk — special should do much more
     expect(specialDmg.damage).toBeGreaterThan(physicalDmg.damage);
+  });
+
+  it("stageMultiplier: 0 → 1x, 1 → 1.5x, 2 → 2.25x, clamped", () => {
+    expect(stageMultiplier(0)).toBe(1);
+    expect(stageMultiplier(1)).toBeCloseTo(1.5);
+    expect(stageMultiplier(2)).toBeCloseTo(2.25);
+    expect(stageMultiplier(5)).toBeCloseTo(2.25); // clamped
+    expect(stageMultiplier(-1)).toBe(1); // clamped
+  });
+
+  it("X Attack (physical atk stage) increases damage by ~1.5x at stage 1", () => {
+    const attacker = createBattlePokemon(getPokemon("charmander"), 15);
+    const defender = createBattlePokemon(getPokemon("eevee"), 15);
+
+    const base = calculateDamage(attacker, defender, getMove("tackle"), fixedRng);
+    attacker.battleBoosts.atk = 1;
+    const boosted = calculateDamage(attacker, defender, getMove("tackle"), fixedRng);
+
+    // With no other randomness changes, boosted damage should be meaningfully higher.
+    expect(boosted.damage).toBeGreaterThan(base.damage);
+    // Ratio should be close to 1.5 (within rounding noise since the formula has floors)
+    expect(boosted.damage / base.damage).toBeGreaterThan(1.3);
+  });
+
+  it("X Defend (defender def stage) reduces incoming physical damage", () => {
+    const attacker = createBattlePokemon(getPokemon("charmander"), 15);
+    const defender = createBattlePokemon(getPokemon("eevee"), 15);
+
+    const base = calculateDamage(attacker, defender, getMove("tackle"), fixedRng);
+    defender.battleBoosts.def = 1;
+    const boosted = calculateDamage(attacker, defender, getMove("tackle"), fixedRng);
+
+    expect(boosted.damage).toBeLessThan(base.damage);
+  });
+
+  it("X Special stage on attacker increases special-move damage", () => {
+    const attacker = createBattlePokemon(getPokemon("abra"), 15);
+    const defender = createBattlePokemon(getPokemon("eevee"), 15);
+
+    const base = calculateDamage(attacker, defender, getMove("confusion"), fixedRng);
+    attacker.battleBoosts.spc = 1;
+    const boosted = calculateDamage(attacker, defender, getMove("confusion"), fixedRng);
+
+    expect(boosted.damage).toBeGreaterThan(base.damage);
   });
 });

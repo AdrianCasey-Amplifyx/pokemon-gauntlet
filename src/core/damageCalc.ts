@@ -7,6 +7,12 @@ export interface DamageResult {
   isStab: boolean;
 }
 
+/** Convert a stage count (0-2) into a stat multiplier. Each stage = 1.5x. */
+export function stageMultiplier(stage: number): number {
+  const clamped = Math.max(0, Math.min(2, stage));
+  return Math.pow(1.5, clamped);
+}
+
 export function calculateDamage(
   attacker: BattlePokemon,
   defender: BattlePokemon,
@@ -17,11 +23,17 @@ export function calculateDamage(
     return { damage: 0, effectiveness: 1, isStab: false };
   }
 
-  // Pick atk/def based on move category
-  const atk =
+  // Pick atk/def based on move category, applying temporary X-item stage boosts
+  const atkRaw =
     move.category === "physical" ? attacker.stats.atk : attacker.stats.spc;
-  const def =
+  const defRaw =
     move.category === "physical" ? defender.stats.def : defender.stats.spc;
+  const atkStage =
+    move.category === "physical" ? attacker.battleBoosts.atk : attacker.battleBoosts.spc;
+  const defStage =
+    move.category === "physical" ? defender.battleBoosts.def : defender.battleBoosts.spc;
+  const atk = atkRaw * stageMultiplier(atkStage);
+  const def = defRaw * stageMultiplier(defStage);
 
   // Base damage formula (Gen 1 inspired)
   let damage =

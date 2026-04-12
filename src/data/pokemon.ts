@@ -278,6 +278,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "thunder_punch", level: 38 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "raichu",
+    evolvesFrom: "pikachu", evolutionStone: "thunder_stone",
   },
   sandshrew: {
     id: "sandshrew", name: "Sandshrew", types: ["ground"],
@@ -332,6 +333,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 44 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "nidoqueen",
+    evolvesFrom: "nidorina", evolutionStone: "moon_stone",
   },
   nidoran_m: {
     id: "nidoran_m", name: "Nidoran M", types: ["poison"],
@@ -364,6 +366,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 44 }, { moveId: "horn_drill", level: 48 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "nidoking",
+    evolvesFrom: "nidorino", evolutionStone: "moon_stone",
   },
   clefairy: {
     id: "clefairy", name: "Clefairy", types: ["normal"],
@@ -385,6 +388,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 44 },
     ],
     catchRate: 0.35, rarity: "uncommon", spriteKey: "clefable",
+    evolvesFrom: "clefairy", evolutionStone: "moon_stone",
   },
   vulpix: {
     id: "vulpix", name: "Vulpix", types: ["fire"],
@@ -405,6 +409,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "fire_blast", level: 36 }, { moveId: "hyper_beam", level: 42 },
     ],
     catchRate: 0.35, rarity: "uncommon", spriteKey: "ninetales",
+    evolvesFrom: "vulpix", evolutionStone: "fire_stone",
   },
   jigglypuff: {
     id: "jigglypuff", name: "Jigglypuff", types: ["normal"],
@@ -426,6 +431,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "ice_beam", level: 38 },
     ],
     catchRate: 0.4, rarity: "uncommon", spriteKey: "wigglytuff",
+    evolvesFrom: "jigglypuff", evolutionStone: "moon_stone",
   },
   zubat: {
     id: "zubat", name: "Zubat", types: ["poison", "flying"],
@@ -482,6 +488,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "sludge_bomb", level: 44 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "vileplume",
+    evolvesFrom: "gloom", evolutionStone: "leaf_stone",
   },
   paras: {
     id: "paras", name: "Paras", types: ["bug", "grass"],
@@ -638,6 +645,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 45 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "arcanine",
+    evolvesFrom: "growlithe", evolutionStone: "fire_stone",
   },
   poliwag: {
     id: "poliwag", name: "Poliwag", types: ["water"],
@@ -670,6 +678,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 46 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "poliwrath",
+    evolvesFrom: "poliwhirl", evolutionStone: "water_stone",
   },
   abra: {
     id: "abra", name: "Abra", types: ["psychic"],
@@ -769,6 +778,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "sludge_bomb", level: 42 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "victreebel",
+    evolvesFrom: "weepinbell", evolutionStone: "leaf_stone",
   },
   tentacool: {
     id: "tentacool", name: "Tentacool", types: ["water", "poison"],
@@ -987,6 +997,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "hyper_beam", level: 44 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "cloyster",
+    evolvesFrom: "shellder", evolutionStone: "water_stone",
   },
   gastly: {
     id: "gastly", name: "Gastly", types: ["ghost", "poison"],
@@ -1123,6 +1134,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "solar_beam", level: 40 }, { moveId: "hyper_beam", level: 46 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "exeggutor",
+    evolvesFrom: "exeggcute", evolutionStone: "leaf_stone",
   },
   cubone: {
     id: "cubone", name: "Cubone", types: ["ground"],
@@ -1318,6 +1330,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "ice_beam", level: 40 }, { moveId: "hydro_pump", level: 46 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "starmie",
+    evolvesFrom: "staryu", evolutionStone: "water_stone",
   },
   mr_mime: {
     id: "mr_mime", name: "Mr. Mime", types: ["psychic"],
@@ -1455,6 +1468,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "ice_beam", level: 42 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "vaporeon",
+    evolvesFrom: "eevee", evolutionStone: "water_stone",
   },
   jolteon: {
     id: "jolteon", name: "Jolteon", types: ["electric"],
@@ -1466,6 +1480,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "thunder", level: 40 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "jolteon",
+    evolvesFrom: "eevee", evolutionStone: "thunder_stone",
   },
   flareon: {
     id: "flareon", name: "Flareon", types: ["fire"],
@@ -1477,6 +1492,7 @@ export const POKEMON: Record<string, PokemonSpecies> = {
       { moveId: "fire_blast", level: 40 },
     ],
     catchRate: 0.3, rarity: "uncommon", spriteKey: "flareon",
+    evolvesFrom: "eevee", evolutionStone: "fire_stone",
   },
   porygon: {
     id: "porygon", name: "Porygon", types: ["normal"],

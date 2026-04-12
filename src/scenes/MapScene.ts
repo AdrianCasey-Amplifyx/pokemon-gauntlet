@@ -908,8 +908,8 @@ export class MapScene extends Phaser.Scene {
       if (canTarget) {
         cardBg.setInteractive();
         cardBg.on("pointerdown", () => {
-          const { success } = applyItem(belt.item.id, pokemon);
-          if (success) belt.quantity--;
+          const result = applyItem(belt.item.id, pokemon, { roster: this.gameState.roster });
+          if (result.kind !== "fail") belt.quantity--;
           modal.destroy(true);
           this.buildMapUI();
         });

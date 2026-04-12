@@ -100,10 +100,13 @@ export class BattleScene extends Phaser.Scene {
     if (this.isProcessing) return;
     if (this.battleSM.phase !== "PLAYER_CHOOSE_ACTION") return;
 
+    // Sentinel -1 from the HUD means "apply to the active battler" (X items).
+    const resolvedTarget = targetPartyIndex < 0 ? this.battleSM.playerActiveIndex : targetPartyIndex;
+
     this.isProcessing = true;
     this.hud.setMovesEnabled(false);
     this.hud.closeAllOverlays();
-    this.playEventSequence(this.battleSM.submitPlayerItem(itemIndex, targetPartyIndex));
+    this.playEventSequence(this.battleSM.submitPlayerItem(itemIndex, resolvedTarget));
   }
 
   private playEventSequence(events: AnyBattleEvent[]): void {
@@ -173,6 +176,19 @@ export class BattleScene extends Phaser.Scene {
         }
         this.hud.updatePartyDots();
         break;
+
+      case "stat_boost": {
+        const statNames: Record<string, string> = {
+          atk: "Attack",
+          def: "Defense",
+          spd: "Speed",
+          spc: "Special",
+        };
+        const label = statNames[event.stat] ?? event.stat;
+        this.hud.showMessage(`${event.pokemonName}'s ${label} rose!`);
+        this.hud.updateStatBoostIndicator(this.battleSM.playerPokemon);
+        break;
+      }
 
       case "status_applied": {
         const statusNames: Record<string, string> = { burn: "burned", poison: "poisoned", paralyze: "paralyzed", sleep: "fell asleep" };
