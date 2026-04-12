@@ -275,11 +275,14 @@ export class MainMenuScene extends Phaser.Scene {
       const eggSectionY = 80 + items.length * 70 + 10;
       this.add.text(GAME_W / 2, eggSectionY, "EGGS", { fontSize: "12px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold" }).setOrigin(0.5);
       eggs.forEach((egg, i) => {
-        const y = eggSectionY + 22 + i * 28;
+        const y = eggSectionY + 22 + i * 32;
         if (y > GAME_H - 75) return;
         const tierData = EGG_TIERS[egg.tier];
-        this.add.rectangle(GAME_W / 2, y, GAME_W - 40, 24, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, tierData.color);
-        this.add.ellipse(35, y, 14, 18, tierData.color).setOrigin(0.5);
+        this.add.rectangle(GAME_W / 2, y, GAME_W - 40, 28, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, tierData.color);
+        if (this.textures.exists(tierData.spriteKey)) {
+          const img = this.add.image(35, y, tierData.spriteKey).setDisplaySize(24, 24).setOrigin(0.5);
+          img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
         this.add.text(55, y, tierData.name, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
         this.add.text(GAME_W - 30, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
       });
@@ -437,13 +440,15 @@ export class MainMenuScene extends Phaser.Scene {
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 60, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(2, canAfford ? tier.color : 0x333344);
 
-      // Egg icon rendered as a rounded rect colored by tier
-      this.add.ellipse(GAME_W / 2 - 148, y, 26, 34, tier.color).setOrigin(0.5).setStrokeStyle(1, 0xffffff);
-      this.add.text(GAME_W / 2 - 148, y, "\u25cf", { fontSize: "10px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0.5);
+      if (this.textures.exists(tier.spriteKey)) {
+        const eggImg = this.add.image(GAME_W / 2 - 148, y, tier.spriteKey).setDisplaySize(48, 48).setOrigin(0.5);
+        eggImg.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        if (!canAfford) eggImg.setAlpha(0.4);
+      }
 
-      this.add.text(GAME_W / 2 - 125, y - 16, tier.name, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 - 125, y + 2, tier.description, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 - 125, y + 18, `${tier.stepsToHatch} steps to hatch`, { fontSize: "9px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 115, y - 16, tier.name, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 115, y + 2, tier.description, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 115, y + 18, `${tier.stepsToHatch} steps to hatch`, { fontSize: "9px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(0, 0.5);
       this.add.text(GAME_W / 2 + 140, y, `${tier.cost}g`, { fontSize: "14px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
 
       if (canAfford) {
@@ -461,10 +466,13 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(GAME_W / 2, invY + 22, "None — buy one above!", { fontSize: "10px", fontFamily: "monospace", color: "#666666" }).setOrigin(0.5);
     } else {
       eggs.forEach((egg, i) => {
-        const y = invY + 22 + i * 20;
+        const y = invY + 22 + i * 22;
         if (y > GAME_H - 75) return;
         const tierData = EGG_TIERS[egg.tier];
-        this.add.ellipse(GAME_W / 2 - 130, y, 10, 13, tierData.color).setOrigin(0.5);
+        if (this.textures.exists(tierData.spriteKey)) {
+          const img = this.add.image(GAME_W / 2 - 135, y, tierData.spriteKey).setDisplaySize(20, 20).setOrigin(0.5);
+          img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        }
         this.add.text(GAME_W / 2 - 115, y, `${tierData.name}`, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0, 0.5);
         this.add.text(GAME_W / 2 + 140, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
       });

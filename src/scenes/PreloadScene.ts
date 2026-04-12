@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { generatePokemonSprites } from "../sprites/pokemonSprites.ts";
+import { generateEggSprites } from "../sprites/eggSprites.ts";
 
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -8,6 +9,7 @@ export class PreloadScene extends Phaser.Scene {
 
   create(): void {
     generatePokemonSprites(this);
+    generateEggSprites(this);
     this.scene.start("TitleScene");
   }
 }

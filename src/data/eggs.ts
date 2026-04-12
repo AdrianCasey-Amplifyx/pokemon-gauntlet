@@ -8,6 +8,7 @@ export interface EggTierData {
   pool: string[];
   color: number;
   description: string;
+  spriteKey: string;
 }
 
 const COMMON_POOL: string[] = [
@@ -42,6 +43,7 @@ export const EGG_TIERS: Record<EggTier, EggTierData> = {
     pool: COMMON_POOL,
     color: 0x88aa55,
     description: "Hatches a common Pokemon after 50 steps.",
+    spriteKey: "egg_common",
   },
   rare: {
     tier: "rare",
@@ -51,6 +53,7 @@ export const EGG_TIERS: Record<EggTier, EggTierData> = {
     pool: RARE_POOL,
     color: 0x4488cc,
     description: "Hatches a rare Pokemon after 150 steps.",
+    spriteKey: "egg_rare",
   },
   legendary: {
     tier: "legendary",
@@ -60,6 +63,7 @@ export const EGG_TIERS: Record<EggTier, EggTierData> = {
     pool: LEGENDARY_POOL,
     color: 0xcc8822,
     description: "Hatches a legendary Pokemon after 400 steps.",
+    spriteKey: "egg_legendary",
   },
 };
 

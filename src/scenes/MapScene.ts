@@ -437,8 +437,15 @@ export class MapScene extends Phaser.Scene {
     }).setOrigin(0.5);
     container.add(title);
 
-    // Egg sprite — drawn as an ellipse with a stroke
-    const egg = this.add.ellipse(GAME_W / 2, GAME_H / 2, 60, 80, tierData.color).setOrigin(0.5).setStrokeStyle(3, 0xffffff);
+    // Egg sprite — pixel-art texture rendered at 8x scale
+    let egg: Phaser.GameObjects.Image | Phaser.GameObjects.Ellipse;
+    if (this.textures.exists(tierData.spriteKey)) {
+      const eggImg = this.add.image(GAME_W / 2, GAME_H / 2, tierData.spriteKey).setDisplaySize(128, 128).setOrigin(0.5);
+      eggImg.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      egg = eggImg;
+    } else {
+      egg = this.add.ellipse(GAME_W / 2, GAME_H / 2, 60, 80, tierData.color).setOrigin(0.5).setStrokeStyle(3, 0xffffff);
+    }
     container.add(egg);
 
     // Phase 1: wobble
