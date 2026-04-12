@@ -1,10 +1,11 @@
 import Phaser from "phaser";
-import type { GameState } from "../types.ts";
+import type { GameState, EggTier } from "../types.ts";
 import { createBattlePokemon, xpToNextLevel } from "../core/statCalc.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { ITEMS, applyItem } from "../data/items.ts";
 import { getPokemon } from "../data/pokemon.ts";
 import { getAvailableShopPokemon, getAvailableShopItems, getWorldsUnlocked, getTrainableMoves, getEvolutionInfo } from "../data/shop.ts";
+import { EGG_TIERS, getAllEggTiers, createEgg } from "../data/eggs.ts";
 import { calculateAllStats } from "../core/statCalc.ts";
 import { getMove } from "../data/moves.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
@@ -95,8 +96,8 @@ export class MainMenuScene extends Phaser.Scene {
     }
 
     // Main buttons
-    const btnY = 185;
-    const gap = 48;
+    const btnY = 180;
+    const gap = 44;
 
     this.makeBtn(GAME_W / 2, btnY, "POKEMON", "View your roster", 0x335588, () => this.showScreen("roster"));
     this.makeBtn(GAME_W / 2, btnY + gap, "ITEMS", "View & use your items", 0x886633, () => this.showScreen("items"));
@@ -104,7 +105,8 @@ export class MainMenuScene extends Phaser.Scene {
     this.makeBtn(GAME_W / 2, btnY + gap * 3, "TRAIN", "Learn & manage moves", 0x884488, () => this.showScreen("train"));
     this.makeBtn(GAME_W / 2, btnY + gap * 4, "POKEMART", "Buy items with gold", 0x885533, () => this.showScreen("shop"));
     this.makeBtn(GAME_W / 2, btnY + gap * 5, "BUY POKEMON", "Expand your roster", 0x553388, () => this.showScreen("pokeshop"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 6, "ADVENTURE", "Select party & explore!", 0x338855, () => this.showScreen("party"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 6, "EGG SHOP", "Buy & hatch Pokemon eggs", 0xaa8833, () => this.showScreen("eggshop"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 7, "ADVENTURE", "Select party & explore!", 0x338855, () => this.showScreen("party"));
 
     // Title screen button
     const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 40, 160, 34, 0x333333).setOrigin(0.5).setStrokeStyle(1, 0x555555);
@@ -158,7 +160,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.tweens.add({ targets: msg, alpha: 0, duration: 1500, delay: 800, onComplete: () => { msg.destroy(); this.buildUI(); } });
   }
 
-  private showScreen(screen: "roster" | "items" | "shop" | "pokeshop" | "party" | "train"): void {
+  private showScreen(screen: "roster" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train"): void {
     this.children.removeAll(true);
 
     // Dark background
@@ -169,6 +171,7 @@ export class MainMenuScene extends Phaser.Scene {
       case "items": this.drawItems(); break;
       case "shop": this.drawShop(); break;
       case "pokeshop": this.drawPokemonShop(); break;
+      case "eggshop": this.drawEggShop(); break;
       case "party": this.drawPartySelect(); break;
       case "train": this.drawTrainSelect(); break;
     }
@@ -231,8 +234,9 @@ export class MainMenuScene extends Phaser.Scene {
     this.add.text(GAME_W / 2, 30, "YOUR ITEMS", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
 
     const items = this.gameState.playerItems.filter((b) => b.quantity > 0);
+    const eggs = this.gameState.eggs;
 
-    if (items.length === 0) {
+    if (items.length === 0 && eggs.length === 0) {
       this.add.text(GAME_W / 2, 200, "No items!\nVisit the PokeMart to buy some.", { fontSize: "14px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
       return;
     }
@@ -265,6 +269,21 @@ export class MainMenuScene extends Phaser.Scene {
         useBg.on("pointerdown", () => this.showItemUseTarget(belt));
       }
     });
+
+    // Eggs section
+    if (eggs.length > 0) {
+      const eggSectionY = 80 + items.length * 70 + 10;
+      this.add.text(GAME_W / 2, eggSectionY, "EGGS", { fontSize: "12px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold" }).setOrigin(0.5);
+      eggs.forEach((egg, i) => {
+        const y = eggSectionY + 22 + i * 28;
+        if (y > GAME_H - 75) return;
+        const tierData = EGG_TIERS[egg.tier];
+        this.add.rectangle(GAME_W / 2, y, GAME_W - 40, 24, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, tierData.color);
+        this.add.ellipse(35, y, 14, 18, tierData.color).setOrigin(0.5);
+        this.add.text(55, y, tierData.name, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
+        this.add.text(GAME_W - 30, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
+      });
+    }
   }
 
   private showItemUseTarget(belt: typeof this.gameState.playerItems[0]): void {
@@ -403,6 +422,62 @@ export class MainMenuScene extends Phaser.Scene {
         });
       }
     });
+  }
+
+  // --- Egg Shop ---
+  private drawEggShop(): void {
+    this.add.text(GAME_W / 2, 30, "EGG SHOP", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 55, `Gold: ${this.gameState.gold}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 74, "Hatches while you walk the dungeon", { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
+
+    const tiers = getAllEggTiers();
+    tiers.forEach((tier, i) => {
+      const y = 110 + i * 72;
+      const canAfford = this.gameState.gold >= tier.cost;
+
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 60, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(2, canAfford ? tier.color : 0x333344);
+
+      // Egg icon rendered as a rounded rect colored by tier
+      this.add.ellipse(GAME_W / 2 - 148, y, 26, 34, tier.color).setOrigin(0.5).setStrokeStyle(1, 0xffffff);
+      this.add.text(GAME_W / 2 - 148, y, "\u25cf", { fontSize: "10px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0.5);
+
+      this.add.text(GAME_W / 2 - 125, y - 16, tier.name, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 125, y + 2, tier.description, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 125, y + 18, `${tier.stepsToHatch} steps to hatch`, { fontSize: "9px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 + 140, y, `${tier.cost}g`, { fontSize: "14px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
+
+      if (canAfford) {
+        cardBg.setInteractive();
+        cardBg.on("pointerdown", () => this.purchaseEgg(tier.tier));
+      }
+    });
+
+    // Current eggs inventory
+    const invY = 110 + tiers.length * 72 + 10;
+    this.add.text(GAME_W / 2, invY, "YOUR EGGS", { fontSize: "12px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold" }).setOrigin(0.5);
+
+    const eggs = this.gameState.eggs;
+    if (eggs.length === 0) {
+      this.add.text(GAME_W / 2, invY + 22, "None — buy one above!", { fontSize: "10px", fontFamily: "monospace", color: "#666666" }).setOrigin(0.5);
+    } else {
+      eggs.forEach((egg, i) => {
+        const y = invY + 22 + i * 20;
+        if (y > GAME_H - 75) return;
+        const tierData = EGG_TIERS[egg.tier];
+        this.add.ellipse(GAME_W / 2 - 130, y, 10, 13, tierData.color).setOrigin(0.5);
+        this.add.text(GAME_W / 2 - 115, y, `${tierData.name}`, { fontSize: "11px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0, 0.5);
+        this.add.text(GAME_W / 2 + 140, y, `${egg.stepsRemaining} steps left`, { fontSize: "10px", fontFamily: "monospace", color: "#6688aa" }).setOrigin(1, 0.5);
+      });
+    }
+  }
+
+  private purchaseEgg(tier: EggTier): void {
+    const tierData = EGG_TIERS[tier];
+    if (this.gameState.gold < tierData.cost) return;
+    this.gameState.gold -= tierData.cost;
+    this.gameState.eggs.push(createEgg(tier));
+    saveGame(this.gameState);
+    this.showScreen("eggshop");
   }
 
   // --- Party Select ---

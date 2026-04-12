@@ -92,6 +92,7 @@ export class StarterSelectScene extends Phaser.Scene {
       playerX: 0,
       playerY: 0,
       repelSteps: 0,
+      eggs: [],
     };
 
     this.registry.set("gameState", gameState);

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { GameState, BattlePokemon, Direction } from "../types.ts";
+import type { GameState, BattlePokemon, Direction, PokemonSpecies, EggTier } from "../types.ts";
 import { revealTilesAround } from "../core/fogOfWar.ts";
 import { createBattlePokemon, xpToNextLevel } from "../core/statCalc.ts";
 import { applyItem } from "../data/items.ts";
@@ -7,6 +7,7 @@ import { getPokemon } from "../data/pokemon.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel } from "../data/worlds.ts";
+import { EGG_TIERS, tickEggs, calculateHatchLevel } from "../data/eggs.ts";
 
 const GAME_W = 390;
 const GAME_H = 844;
@@ -387,12 +388,104 @@ export class MapScene extends Phaser.Scene {
           }
         }
 
+        // Egg tick — hatch preempts any encounter on this step
+        if (this.tickEggsAndMaybeHatch()) {
+          return;
+        }
+
         if (this.gameState.repelSteps <= 0 && tile.encounterChance > 0 && Math.random() < tile.encounterChance) {
           tile.encounterChance = 0;
           this.triggerBattle();
           return;
         }
         this.isMoving = false;
+      },
+    });
+  }
+
+  /** Tick every egg by 1 step; if one hatches, play the hatch overlay and return true. */
+  private tickEggsAndMaybeHatch(): boolean {
+    const hatched = tickEggs(this.gameState.eggs);
+    if (!hatched) return false;
+
+    const tier = hatched.tier;
+    const species = getPokemon(hatched.speciesId);
+    const level = calculateHatchLevel(this.gameState.roster);
+    const newPokemon = createBattlePokemon(species, level);
+    this.gameState.roster.push(newPokemon);
+    if (!this.gameState.seenPokemon.includes(species.id)) {
+      this.gameState.seenPokemon.push(species.id);
+    }
+    this.gameState.eggs = this.gameState.eggs.filter((e) => e.id !== hatched.id);
+    saveGame(this.gameState);
+
+    this.playHatchOverlay(tier, species, level, () => {
+      this.isMoving = false;
+    });
+    return true;
+  }
+
+  private playHatchOverlay(tier: EggTier, species: PokemonSpecies, level: number, onDismiss: () => void): void {
+    const tierData = EGG_TIERS[tier];
+    const container = this.add.container(0, 0).setDepth(500);
+
+    const darkBg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.88).setOrigin(0.5);
+    container.add(darkBg);
+
+    const title = this.add.text(GAME_W / 2, GAME_H / 2 - 140, `Your ${tierData.name} hatched!`, {
+      fontSize: "16px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5);
+    container.add(title);
+
+    // Egg sprite — drawn as an ellipse with a stroke
+    const egg = this.add.ellipse(GAME_W / 2, GAME_H / 2, 60, 80, tierData.color).setOrigin(0.5).setStrokeStyle(3, 0xffffff);
+    container.add(egg);
+
+    // Phase 1: wobble
+    this.tweens.add({
+      targets: egg, angle: { from: -12, to: 12 },
+      duration: 180, yoyo: true, repeat: 3, ease: "Sine.easeInOut",
+      onComplete: () => {
+        // Phase 2: flash white + shrink egg
+        const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff, 0).setOrigin(0.5);
+        container.add(flash);
+        this.tweens.add({ targets: flash, alpha: { from: 0, to: 1 }, duration: 160, yoyo: true,
+          onComplete: () => flash.destroy() });
+        this.tweens.add({ targets: egg, scale: { from: 1, to: 0 }, duration: 200,
+          onComplete: () => egg.destroy() });
+
+        // Phase 3: reveal Pokemon
+        this.time.delayedCall(250, () => {
+          if (this.textures.exists(species.spriteKey)) {
+            const sprite = this.add.image(GAME_W / 2, GAME_H / 2, species.spriteKey)
+              .setDisplaySize(120, 120).setOrigin(0.5).setAlpha(0);
+            sprite.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+            container.add(sprite);
+            this.tweens.add({
+              targets: sprite, alpha: 1, scale: { from: 0.5, to: 1 },
+              duration: 600, ease: "Back.easeOut",
+            });
+          }
+
+          const joinText = this.add.text(GAME_W / 2, GAME_H / 2 + 90, `${species.name} joined your team\nat Lv${level}!`, {
+            fontSize: "15px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold", align: "center",
+          }).setOrigin(0.5);
+          container.add(joinText);
+
+          const tapText = this.add.text(GAME_W / 2, GAME_H / 2 + 150, "Tap to continue", {
+            fontSize: "12px", fontFamily: "monospace", color: "#888888",
+          }).setOrigin(0.5);
+          container.add(tapText);
+          this.tweens.add({ targets: tapText, alpha: 0.4, duration: 800, yoyo: true, repeat: -1 });
+
+          // Dismiss on tap
+          const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0).setOrigin(0.5).setInteractive();
+          container.add(overlay);
+          overlay.once("pointerdown", () => {
+            container.destroy();
+            onDismiss();
+          });
+        });
       },
     });
   }

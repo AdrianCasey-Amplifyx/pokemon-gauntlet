@@ -88,6 +88,17 @@ export interface BattleItem {
   quantity: number;
 }
 
+// --- Eggs ---
+
+export type EggTier = "common" | "rare" | "legendary";
+
+export interface EggInstance {
+  id: string;
+  tier: EggTier;
+  speciesId: string;
+  stepsRemaining: number;
+}
+
 // --- Actions ---
 
 export interface AttackAction {
@@ -239,6 +250,7 @@ export interface GameState {
   playerX: number;
   playerY: number;
   repelSteps: number;
+  eggs: EggInstance[];
 }
 
 // --- Shop ---

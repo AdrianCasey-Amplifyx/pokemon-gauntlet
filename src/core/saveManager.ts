@@ -1,4 +1,4 @@
-import type { GameState, BattlePokemon, WorldProgress } from "../types.ts";
+import type { GameState, BattlePokemon, WorldProgress, EggInstance } from "../types.ts";
 import { getPokemon } from "../data/pokemon.ts";
 import { getMove } from "../data/moves.ts";
 import { ITEMS } from "../data/items.ts";
@@ -32,6 +32,7 @@ interface SaveData {
   seenPokemon: string[];
   worlds: WorldProgress[];
   activeWorld: number;
+  eggs?: EggInstance[];
 }
 
 function serializePokemon(p: BattlePokemon): SavePokemon {
@@ -89,6 +90,7 @@ export function saveGame(state: GameState): void {
     seenPokemon: state.seenPokemon,
     worlds: state.worlds,
     activeWorld: state.activeWorld,
+    eggs: state.eggs,
   };
 
   localStorage.setItem(slotKey(activeSlot), JSON.stringify(data));
@@ -146,6 +148,7 @@ function buildGameState(data: SaveData): GameState {
     playerX: 0,
     playerY: 0,
     repelSteps: 0,
+    eggs: data.eggs ?? [],
   };
 }
 
