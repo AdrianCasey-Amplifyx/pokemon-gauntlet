@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getAllSlotInfo, loadGame, deleteSlotSave, setActiveSlot, saveGame, createTestGameState, type SaveSlotInfo } from "../core/saveManager.ts";
+import { getAllSlotInfo, loadGame, deleteSlotSave, setActiveSlot, saveGame, createTestGameState, addGoldToSlot, type SaveSlotInfo } from "../core/saveManager.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 
 const GAME_W = 390;
@@ -59,8 +59,8 @@ export class TitleScene extends Phaser.Scene {
       fontSize: "11px", fontFamily: "monospace", color: "#888899",
     }).setOrigin(0.5));
 
-    const startY = 150;
-    const slotH = 170;
+    const startY = 140;
+    const slotH = 195;
 
     slots.forEach((slot, i) => {
       this.createSlotCard(overlay, startY + i * slotH, slot);
@@ -79,7 +79,7 @@ export class TitleScene extends Phaser.Scene {
 
   private createSlotCard(overlay: Phaser.GameObjects.Container, y: number, slot: SaveSlotInfo): void {
     const cardW = 340;
-    const cardH = 150;
+    const cardH = 180;
     const cardX = GAME_W / 2;
 
     const cardBg = this.add.rectangle(cardX, y + cardH / 2, cardW, cardH, slot.empty ? 0x222233 : 0x1a2a3a).setOrigin(0.5).setStrokeStyle(2, slot.empty ? 0x444455 : 0x446688);
@@ -163,6 +163,21 @@ export class TitleScene extends Phaser.Scene {
       delBg.setInteractive();
       delBg.on("pointerdown", () => {
         this.showDeleteConfirm(overlay, slot.slot);
+      });
+
+      // Dev: +5000g button
+      const goldBg = this.add.rectangle(cardX, y + 150, 220, 30, 0x664422).setOrigin(0.5).setStrokeStyle(1, 0xaa7733);
+      overlay.add(goldBg);
+      const goldLabel = this.add.text(cardX, y + 150, "DEV: +5000g", {
+        fontSize: "12px", fontFamily: "monospace", color: "#ffcc77", fontStyle: "bold",
+      }).setOrigin(0.5);
+      overlay.add(goldLabel);
+      goldBg.setInteractive();
+      goldBg.on("pointerdown", () => {
+        if (addGoldToSlot(slot.slot, 5000)) {
+          overlay.destroy(true);
+          this.showSlotSelect();
+        }
       });
     }
   }

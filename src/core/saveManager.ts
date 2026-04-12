@@ -217,6 +217,24 @@ export function deleteSlotSave(slot: number): void {
 }
 
 /**
+ * Dev helper: add gold directly to a slot's saved state without loading it
+ * into the full game-state object. Returns true if the slot existed and was
+ * updated, false if the slot was empty or the save was unreadable.
+ */
+export function addGoldToSlot(slot: number, amount: number): boolean {
+  const raw = localStorage.getItem(slotKey(slot));
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw) as SaveData;
+    data.gold = (data.gold ?? 0) + amount;
+    localStorage.setItem(slotKey(slot), JSON.stringify(data));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Dev helper: build an advanced GameState for manually testing features
  * (notably the egg shop and hatch flow) without playing through early game.
  * Spawns a level-30 evolved-starter party, 5000g, full item belt, worlds 0-2

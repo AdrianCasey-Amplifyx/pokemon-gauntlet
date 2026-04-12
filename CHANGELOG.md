@@ -4,6 +4,7 @@ All notable game changes are recorded here. Newest entries at the top. See `CLAU
 
 ## 2026-04-12
 
+- **build:** Added a **DEV: +5000g** button on every occupied save slot card in the title screen so an existing run can be topped up for egg testing without starting over. Backed by a new `addGoldToSlot()` helper in `saveManager.ts` that edits the raw save JSON directly. Slot card height grew from 150 → 180 to fit the extra row.
 - **build:** Added a **DEV: TEST SAVE (5000g)** button on slot 1's empty card in the title screen. Injects an advanced state for testing the egg system without playing through early game: level-30 Charmeleon/Wartortle/Ivysaur party (+ L25 Pikachu & Pidgeotto in roster), 5000 gold, full item belt, worlds 0–2 unlocked, 1 common + 1 rare egg already in the bag. Implemented via `createTestGameState()` in `saveManager.ts`.
 - **content:** Added the **egg shop & hatching system** — three tiers (Common 250g/50 steps, Rare 750g/150 steps, Legendary 2000g/400 steps), step-based hatching tied to dungeon movement, hatch level = avg level of top-3 roster (min 5). Includes `src/data/eggs.ts`, `EggInstance`/`EggTier` types, save/load support, town egg shop UI, and step-tick wiring in `MapScene`. (Code was on disk before the repo existed — this commit brings it into git history.)
 - **test:** Added `tests/eggs.test.ts` covering egg tier rolls, hatch-level calculation, and step ticking.
