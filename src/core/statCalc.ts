@@ -24,12 +24,12 @@ export function calculateAllStats(baseStats: Stats, level: number): Stats {
 
 export function xpToNextLevel(level: number): number {
   // Scaling: early levels are fast, later levels require more XP
-  return Math.floor(level * level * 8 + level * 15 + 30);
+  return Math.floor(level * level * 5 + level * 10 + 20);
 }
 
 /** XP earned from defeating an enemy Pokemon */
 export function xpFromEnemy(enemyLevel: number): number {
-  return Math.floor(enemyLevel * 6 + 10 + Math.random() * 8);
+  return Math.floor(enemyLevel * 10 + 15 + Math.random() * 8);
 }
 
 /** Apply XP to a Pokemon. Returns true if leveled up. */

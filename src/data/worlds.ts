@@ -39,8 +39,8 @@ export function getGridSize(worldIndex: number, mapIndex: number): number {
 }
 
 export function getEncounterLevel(worldIndex: number, mapIndex: number): number {
-  const base = 2 + worldIndex * 5;
-  const mapScaling = Math.floor(mapIndex / 5);
+  const base = 2 + worldIndex * 10;
+  const mapScaling = Math.floor(mapIndex / 2);
   return base + mapScaling;
 }
 
