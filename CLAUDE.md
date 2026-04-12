@@ -33,7 +33,8 @@ src/
     items.ts                 # Items, apply logic, shop data, gold rewards
     typeChart.ts             # 15-type effectiveness matrix (Gen 1)
     shop.ts                  # Shop pricing, availability, move training
-    worlds.ts                # 8 worlds, encounter pools, scaling formulas
+    worlds.ts                # 8 worlds, encounter pools, scaling formulas, bosses
+    eggs.ts                  # Egg tiers (common/rare/legendary), pools, hatch logic
   core/
     battleStateMachine.ts    # Turn flow, action resolution, event system
     damageCalc.ts            # Damage formula with STAB + type effectiveness
@@ -89,7 +90,7 @@ TitleScene → StarterSelectScene → MainMenuScene (town hub)
                                   BattleScene
 ```
 
-- **Town:** Heal at PokeCenter (20g), buy items at PokeMart, buy previously-seen Pokemon (species must be encountered in battle first to unlock), manage moves, select party of 3, enter adventure
+- **Town:** Heal at PokeCenter (20g), buy items at PokeMart, buy previously-seen Pokemon (species must be encountered in battle first to unlock), buy eggs (common/rare/legendary) that hatch after N steps in dungeons, manage moves, select party of 3, enter adventure
 - **Adventure:** Single room per run. Find the exit in a fog-of-war grid. Random encounters based on world-specific Pokemon pools. Gold drops on floor tiles. `Repel` suppresses encounters for 20 steps; `Map` reveals the whole grid.
 - **Battle:** Cooldown-based moves (CD 0 = always available, CD 1-3 = wait that many turns). Speed determines turn order. XP awarded to alive party on enemy faint. Enemy parties can have multiple Pokemon, scaling with world/room.
 - **Progression:** 8 worlds × 25 rooms each. Boss rooms at 5/10/15/20/25 spawn a rare out-of-pool species at elevated level. Clearing a room heals party and advances progress. Defeat loses 15% gold and returns to town (no auto-heal).
@@ -109,7 +110,7 @@ TitleScene → StarterSelectScene → MainMenuScene (town hub)
 
 - `BattlePokemon` — runtime instance with mutable HP, XP, cooldowns, statusEffects
 - `PokemonSpecies` — static species data with base stats and `MovePoolEntry[]` (moveId + unlock level), plus `evolvesFrom`/`evolutionLevel`
-- `GameState` — `roster`, `playerParty`, `playerItems`, `gold`, `seenPokemon` (species IDs unlocked in shop), `worlds` progress, `activeWorld`, `currentMap`, `playerX`/`playerY`, `repelSteps`
+- `GameState` — `roster`, `playerParty`, `playerItems`, `gold`, `seenPokemon` (species IDs unlocked in shop), `worlds` progress, `activeWorld`, `currentMap`, `playerX`/`playerY`, `repelSteps`, `eggs` (array of `EggInstance` with tier + stepsRemaining)
 - `DungeonMap` — 2D tile grid with fog of war, encounter chances, gold drops, single exit
 
 ## Save System
@@ -120,11 +121,20 @@ Saves to `localStorage` key `"pokemonGauntlet_save"`. Serializes Pokemon as `{sp
 
 All `core/` modules have unit tests. Tests use injectable RNG for determinism. Run with `npm test`.
 
-## Changelog Policy
+## End-of-Task Workflow (MANDATORY)
 
-**Always maintain `CHANGELOG.md` in the repo root.** Every time you make a change to the game (gameplay, balance, content, bugfix, refactor, new feature, etc.), append an entry to `CHANGELOG.md` before finishing the task.
+Every time you finish a task that changes the game, run through these steps **in order** before telling the user you're done. Do not skip or reorder them.
 
-Format:
+1. **Make the code changes + run tests** if relevant.
+2. **Update `CHANGELOG.md`** — append an entry under today's date (see format below).
+3. **Update `GAME_DESIGN.md`** — if the change affects gameplay, balance, content, mechanics, economy, progression, or anything a designer/player would care about. Keep this file in sync so it's always a true description of the shipped game.
+4. **Update `CLAUDE.md`** — if the change touches architecture (new file in `core/`, new scene, new data module, new top-level system). Keep the Directory Structure and Data Model sections accurate.
+5. **Commit** — one logical change = one commit, with a meaningful message (see Git section).
+6. **Push to `origin main`** — never leave the session with unpushed commits on `main`.
+
+If any step fails (tests break, push rejected, etc.), stop and surface the problem to the user — do not paper over it.
+
+### CHANGELOG.md format
 
 ```
 ## YYYY-MM-DD
@@ -134,10 +144,37 @@ Format:
 ```
 
 Rules:
-- Use the current absolute date (today is provided in the session context — never use relative dates like "yesterday").
-- Group same-day entries under a single date heading; add new bullets to the existing date if it's already the top entry.
-- Newest date goes at the top (reverse-chronological).
-- `<area>` tags: `balance`, `content`, `combat`, `ui`, `map`, `shop`, `save`, `audio`, `bugfix`, `refactor`, `test`, `docs`, `build`.
-- Keep each bullet to one sentence focused on the *player-visible effect* or *why the change was made*, not a diff recap.
+- Use the absolute date from the session context — never relative dates like "yesterday".
+- Newest date at the top (reverse-chronological). Group same-day entries under a single date heading; add new bullets to the existing top entry if it's already today.
+- `<area>` tags: `balance`, `content`, `combat`, `ui`, `map`, `shop`, `save`, `audio`, `bugfix`, `refactor`, `test`, `docs`, `build`, `git`.
+- One sentence per bullet, focused on the *player-visible effect* or *why*, not a diff recap.
 - If the user reverts or changes direction, add a new entry noting the revert — never edit history.
-- If a change touches CLAUDE.md's architecture section (new file in `core/`, new scene, new data module), update CLAUDE.md's directory listing in the same commit and note it as `docs` in the changelog.
+
+### GAME_DESIGN.md expectations
+
+`GAME_DESIGN.md` is the canonical description of how the game currently plays. Sections it must keep accurate:
+- Core loop and scene flow
+- Combat system (formula, cooldown tiers, status effects, type chart size)
+- World/room structure (count, scaling formulas, boss rooms)
+- Shop contents and pricing, PokeCenter cost, gold economy
+- Items (battle + field) with current effects
+- Egg system (tiers, costs, step counts, pools)
+- Save system behavior
+- Any forward-looking/aspirational content goes under a clearly-marked **Future Directions** section so it isn't confused with shipped features.
+
+When you change a number (move power, cooldown, shop price, HP heal, encounter rate, etc.), update the matching table/section in `GAME_DESIGN.md` in the same commit.
+
+## Git & GitHub Policy
+
+The repo is hosted at **https://github.com/AdrianCasey-Amplifyx/pokemon-gauntlet** (public), default branch `main`.
+
+- **Commit messages:** present-tense imperative (`add egg shop`, `fix cooldown tick bug`), not past tense. Subject ≤72 chars. Add a body paragraph when the "why" isn't obvious from the subject.
+- **Always include** the Claude co-author trailer:
+  ```
+  Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+  ```
+- **Stage files explicitly by name** when possible — avoid `git add -A` / `git add .` so build artifacts or secrets don't sneak in.
+- **Push immediately after committing** so GitHub stays in sync with local. If you're making several related commits in one session, it's fine to push once at the end — but never end a session with unpushed commits on `main`.
+- **Never commit:** `node_modules/`, `dist/`, `.env*`, `.DS_Store`, editor cruft. These are already in `.gitignore`.
+- **Branches:** work directly on `main` unless the user asks for a feature branch or PR. If the user requests a PR, create a branch like `feat/<short-name>` or `fix/<short-name>`, push it, and open the PR with `gh pr create`.
+- **Destructive operations** (`reset --hard`, `push --force`, branch delete, history rewrite, `--amend` on pushed commits) always require explicit user confirmation — never as a shortcut to "fix" a mistake.

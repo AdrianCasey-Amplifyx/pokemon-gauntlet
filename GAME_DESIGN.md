@@ -1,604 +1,468 @@
 # Pokemon Gauntlet — Game Design Document
 
-## Context
-
-A roguelike Pokemon game built for mobile-first browser play. Runs are 2-5 minutes. Turn-based combat with cooldown moves (Grim Quest style). Gauntlet structure with catching risk/reward. Persistent meta-progression across runs. 8 gym areas form the campaign. Built with Phaser 3 + TypeScript + Vite. Art sourced from Midjourney with retro-modern hybrid aesthetic.
+> **Status:** This document describes the game **as it is currently built**. Aspirational / unbuilt ideas live in [§13 Future Directions](#13-future-directions) so they can't be confused with shipped features. When code changes, update this file in the same commit (see `CLAUDE.md` → End-of-Task Workflow).
 
 ---
 
-## 1. Core Game Loop
+## 1. Overview
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    HOME BASE                         │
-│  Roster · Moves · Items · Shop · Lab · Upgrades     │
-└──────────────┬──────────────────────────────────────┘
-               │ Select area + loadout
-               ▼
-┌─────────────────────────────────────────────────────┐
-│                  LOADOUT PHASE                       │
-│  Pick 3 Pokemon · Assign 4 moves each · Fill belt   │
-└──────────────┬──────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────┐
-│                   GAUNTLET RUN                       │
-│  12-18 rooms: battles, catches, rests, forks, loot  │
-└──────────────┬──────────────────────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────────────────────┐
-│                GYM LEADER BOSS                       │
-│  2-3 Pokemon, held items, signature moves            │
-└──────────────┬──────────────────────────────────────┘
-               │ Win or lose
-               ▼
-┌─────────────────────────────────────────────────────┐
-│                  RUN RESULTS                         │
-│  XP · Currency · Caught Pokemon · Badge (if won)    │
-└──────────────┬──────────────────────────────────────┘
-               │
-               ▼ Back to HOME BASE
-```
+Pokemon Gauntlet is a mobile-first, browser-based roguelike built with Phaser 3 + TypeScript + Vite. Runs are short (1–3 minutes per dungeon room) and loop around a persistent town hub where the player heals, shops, trains, hatches eggs, and manages a roster. Combat is turn-based with **per-move cooldowns** (Grim Quest style) rather than PP.
 
-**Win condition:** Beat all 8 Gym Leaders. Each badge unlocks the next area.
-**Lose condition:** All party Pokemon faint during a run. You keep caught Pokemon, XP, and partial currency.
+- **Mobile-first viewport:** 390 × 844 portrait (scaled to fit)
+- **151 Gen 1 Pokemon** with stats, move pools, and evolution lines
+- **80+ moves** spread across 15 types in 4 cooldown tiers
+- **8 worlds × 25 rooms** of procedurally generated fog-of-war dungeons
+- **No external assets:** all sprites are drawn from code at boot, all music is procedural Web Audio
+- **Persistence:** single save slot in `localStorage`
 
 ---
 
-## 2. Combat System
+## 2. Core Game Loop
 
-### 2.1 Cooldown-Based Moves
+```
+┌─────────────────────────────────────────────────────┐
+│                   TITLE SCREEN                      │
+│     New Game · Continue · Delete Save               │
+└──────────────┬──────────────────────────────────────┘
+               │ New Game
+               ▼
+┌─────────────────────────────────────────────────────┐
+│                STARTER SELECT                        │
+│  Pick 1 of 3: Charmander / Squirtle / Bulbasaur     │
+│  Starting inventory: 3 Potions, 1 Escape Rope, 100g │
+└──────────────┬──────────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────────┐
+│               MAIN MENU (Town Hub)                   │
+│  Pokemon · Items · PokeMart · PokeCenter            │
+│  Buy Pokemon · Eggs · Adventure                      │
+└──────────────┬──────────────────────────────────────┘
+               │ Select party of 3, enter Adventure
+               ▼
+┌─────────────────────────────────────────────────────┐
+│              MAP SCENE (Dungeon Room)                │
+│  Fog-of-war grid, D-pad movement, encounters,       │
+│  gold pickups, find the exit tile                   │
+└──────────────┬──────────────────────────────────────┘
+               │ Step onto an encounter
+               ▼
+┌─────────────────────────────────────────────────────┐
+│                  BATTLE SCENE                        │
+│  Turn-based, cooldown moves, swap, items            │
+└──────────────┬──────────────────────────────────────┘
+               │ Win → back to Map
+               │ Exit tile → party heal + advance room
+               │ All faint → lose 15% gold → back to Town
+               ▼
+       (loop back to Main Menu or next room)
+```
 
-Every move has a **cooldown** measured in turns. After using a move, it becomes unavailable for N turns.
+**Win condition (aspirational):** Clear all 25 rooms of all 8 worlds.
+**Lose condition:** All three active party members faint. The run ends, player forfeits 15% of their current gold, and returns to town. No auto-heal on defeat.
+**Save:** Auto-saves at town checkpoints and after every cleared room. Mid-dungeon state is **not** preserved — quitting during a dungeon loses that run's progress.
 
-**Move categories by cooldown:**
+### Scene flow
+
+| Scene | Purpose |
+|---|---|
+| `BootScene` | Splash screen |
+| `PreloadScene` | Generate 151 Pokemon sprite textures from code |
+| `TitleScene` | New Game / Continue / Delete Save |
+| `StarterSelectScene` | Pick 1 of 3 starters at level 5 |
+| `MainMenuScene` | Town hub — all shops, management, launch point for Adventure |
+| `WorldSelectScene` | Browse 8 worlds with progress (not in main flow yet) |
+| `MapScene` | Fog-of-war dungeon grid with D-pad controls |
+| `BattleScene` | Turn-based combat with party switching and items |
+
+---
+
+## 3. Combat System
+
+### 3.1 Cooldown-Based Moves
+
+Every move has a **cooldown** measured in turns. After using a move, it becomes unavailable for N turns. Cooldowns tick down every turn — including while a Pokemon is swapped out — so rotating the party can cycle big moves back in.
 
 | Cooldown | Role | Power Range | Examples |
-|----------|------|-------------|---------|
-| 0 (always available) | Basic attack | 30-50 | Tackle, Scratch, Ember, Water Gun |
-| 1 turn | Bread & butter | 50-70 | Bite, Vine Whip, Thundershock |
-| 2 turns | Heavy hitter | 75-100 | Flamethrower, Surf, Psychic |
-| 3 turns | Nuke / utility | 100-130 or strong effect | Fire Blast, Blizzard, Thunder |
-| 3 turns | Status / debuff | No damage | Burn, Paralyze, Stat drops, Trap |
+|---|---|---|---|
+| **0** | Always available | 20–40 | Tackle, Scratch, Bubble, Pound, Quick Attack |
+| **1** | Bread & butter | 25–50 | Bite, Ember, Water Gun, Vine Whip, Thundershock |
+| **2** | Heavy hitter | 50–70 | Flamethrower, Surf, Psychic, Slam, Waterfall |
+| **3** | Nuke | 70–100 | Fire Blast, Hydro Pump, Hyper Beam, Explosion, Horn Drill |
 
-**Design rule:** Every Pokemon should have exactly 1 cooldown-0 move available. This ensures you always have an action, but your good moves cycle in and out.
+**Design rule:** every learnable Pokemon moveset contains at least one CD-0 move, so the player always has an action.
 
-**Cooldowns tick down whether the Pokemon is active or not.** So swapping out a Pokemon for 2 turns means their big move is refreshed when they come back. This rewards active party rotation.
-
-### 2.2 Turn Structure
+### 3.2 Turn Structure
 
 Each turn:
-1. Player selects action: **Attack**, **Swap**, or **Use Item**
-2. Enemy selects action (AI)
-3. Speed determines who goes first
+1. Player chooses an action: **Attack / Swap / Use Item**
+2. Enemy AI chooses an action
+3. Speed determines order; ties resolve in the player's favor
 4. Actions resolve
-5. End-of-turn effects (burn, poison, trap damage)
-6. Cooldowns tick down by 1
+5. End-of-turn status ticks (burn/poison damage, paralyze/sleep skip rolls)
+6. Cooldowns decrement by 1 for all moves
 
-**Speed timer (configurable):** 5-second timer per turn. If it expires, auto-select the lowest-cooldown available move. This is a setting — players can disable it if they want to think. Default ON for the intended fast-paced feel.
+Swapping costs your turn — the enemy still attacks. Using an item costs your turn the same way.
 
-### 2.3 Damage Formula
+### 3.3 Damage Formula
 
-Simplified Gen 1 inspired formula:
-
-```
-damage = ((2 * level / 5 + 2) * power * (atk / def)) / 50 + 2
-damage *= STAB (1.5 if move type matches Pokemon type)
-damage *= type_effectiveness (0.5 / 1.0 / 2.0)
-damage *= random(0.85, 1.00)
-```
-
-**Stat spread:** Each Pokemon has 5 stats: HP, Attack, Defense, Speed, Special.
-Using a single Special stat (like Gen 1) keeps things simple. Special covers both special attack and special defense.
-
-### 2.4 Type Chart
-
-Start with a **reduced type set** for v1. Can expand later.
-
-**10 types for v1:**
-Normal, Fire, Water, Grass, Electric, Rock, Ground, Psychic, Poison, Fighting
-
-This covers the classic matchups and is enough for 8 gyms with distinct themes. Flying, Ice, Ghost, Dragon, Bug, etc. can be added in future updates.
-
-### 2.5 Switching
-
-- Costs your turn (no free switches)
-- Incoming Pokemon takes the hit if enemy attacks
-- Strategic purpose: rotate to manage HP across party, refresh cooldowns, exploit type matchups
-- Caught Pokemon during the run can be swapped in from a "bench" — they don't occupy active party slots until you swap them in
-
-### 2.6 Status Effects
-
-Keep it to 4 core statuses:
-
-| Status | Effect | Duration |
-|--------|--------|----------|
-| Burn | Lose 1/8 max HP per turn, Attack halved | 3 turns |
-| Poison | Lose 1/8 max HP per turn, stacks with repeated poison | Until healed |
-| Paralyze | 25% chance to skip turn, Speed halved | 3 turns |
-| Trap | Can't switch, lose 1/16 HP per turn | 2 turns |
-
----
-
-## 3. Gauntlet Structure
-
-### 3.1 Room Types
-
-Each gauntlet is a linear sequence of **12-18 rooms** (varies by area). The next **3 rooms are always visible** on the map so the player can plan ahead.
-
-| Room Type | Frequency | Description |
-|-----------|-----------|-------------|
-| **Wild Encounter** | ~50% | Fight a wild Pokemon. Option to catch after winning. |
-| **Trainer Battle** | ~20% | Harder fight (trainer has 2 Pokemon). Better XP/currency. Can't catch. |
-| **Rest Stop** | ~10% | Heal one Pokemon by 40% HP. Choose which one. |
-| **Item Cache** | ~8% | Find a random consumable item (Potion, Revive, Ball, held item). |
-| **Fork** | ~7% | Choose between two paths (e.g., 2 easy rooms vs 1 hard room + rare item). |
-| **Elite Trainer** | ~5% | Mini-boss. Tougher than normal trainer. Drops rare TM or item. |
-
-**Room generation rules:**
-- Never start with a Trainer Battle (ease the player in)
-- Rest Stop never appears in rooms 1-3 or the last 2 rooms before the gym
-- At least 1 Fork per gauntlet
-- At least 1 Rest Stop per gauntlet
-- Elite Trainer appears at most once, always in the second half
-- Gym Leader is always the final room
-
-### 3.2 Difficulty Scaling Within a Run
-
-Rooms get progressively harder:
-
-- **Rooms 1-4:** Wild Pokemon 1-2 levels below player average. Single encounters.
-- **Rooms 5-8:** Wild Pokemon at player level. Trainers have better moves.
-- **Rooms 9-12:** Wild Pokemon 1-2 levels above. Trainers have type coverage.
-- **Rooms 13+:** Challenging encounters. Pokemon with status moves and held items.
-- **Gym Leader:** 2-3 Pokemon, 2-4 levels above player, held items, signature moves.
-
-### 3.3 Area Themes (8 Gyms)
-
-Each area has a distinct environment, encounter pool, and gym leader. Areas unlock linearly.
-
-| Area | Theme | Gym Leader Type | Key Wild Pokemon | Rooms |
-|------|-------|----------------|------------------|-------|
-| 1 — Stonewood Trail | Forest/Rocky | Rock | Geodude, Pidgey, Rattata, Oddish | 12 |
-| 2 — Tidepool Coast | Beach/Water | Water | Tentacool, Staryu, Krabby, Shellder | 13 |
-| 3 — Ember Caverns | Volcanic cave | Fire | Vulpix, Growlithe, Magmar, Ponyta | 14 |
-| 4 — Thundervolt City | Urban/Electric | Electric | Voltorb, Magnemite, Pikachu, Electabuzz | 14 |
-| 5 — Mistveil Garden | Overgrown ruins | Grass/Poison | Bulbasaur, Bellsprout, Nidoran, Grimer | 15 |
-| 6 — Ironpeak Summit | Mountain | Fighting | Machop, Mankey, Hitmonchan, Hitmonlee | 16 |
-| 7 — Mindscape Tower | Psychic temple | Psychic | Abra, Drowzee, Mr. Mime, Jynx | 16 |
-| 8 — Champion's Gauntlet | Mixed/All types | Mixed | All types, evolved forms | 18 |
-
----
-
-## 4. Catching System
-
-### 4.1 Catch Flow
-
-1. Defeat a wild Pokemon in battle (they faint at 0 HP... but not exactly)
-2. If you have a Poke Ball in your belt, the game prompts: **"Attempt catch?"**
-3. **Catch rate** is calculated based on how low you got their HP before the final blow
-
-**The mechanical twist:** Wild Pokemon don't faint at 0 HP if you have a Poke Ball. Instead, they enter a **"weakened" state** at 1 HP when they would have fainted. You then choose: throw the ball (consume it, roll catch rate) or finish them off (no ball used). This avoids the frustration of accidentally KOing what you wanted to catch.
-
-### 4.2 Catch Rate
+Gen 1 inspired, implemented in `src/core/damageCalc.ts`:
 
 ```
-catch_rate = base_rate * ball_modifier * hp_modifier
-
-base_rate: 0.3 - 0.7 depending on Pokemon rarity
-ball_modifier: Poke Ball 1.0, Great Ball 1.5, Ultra Ball 2.0
-hp_modifier: percentage of HP removed (1.0 at full damage, down to 0.3 if barely scratched)
+damage = (((2 * level / 5) + 2) * power * (atk / def)) / 65 + 2
+damage *= 1.5        if STAB (move type matches attacker's type)
+damage *= effectiveness   (0, 0.5, 1.0, 2.0, 4.0)
+damage *= random(0.85 — 1.00)
+damage = max(1, floor(damage))   (unless fully immune, in which case 0)
 ```
 
-**In practice:** Common Pokemon (Rattata) are almost guaranteed catches. Rare Pokemon (Abra, starters) are 30-50% even with low HP. Ultra Balls make rare catches reliable.
+`atk/def` uses **Attack/Defense** for physical moves and **Special/Special** for special moves (single Special stat like Gen 1).
 
-**Failed catch:** Ball is consumed. Pokemon is KO'd. No second chances.
+### 3.4 Stat Formula
 
-### 4.3 Caught Pokemon During Run
-
-- Caught Pokemon are added to a **bench** (up to 3 bench slots)
-- They join at **50% HP** (not the low HP they were caught at — a small mercy)
-- You can swap them into your active party of 3 at any time between rooms
-- They have a random moveset from their species' move pool (you don't choose)
-- They keep the level they were encountered at
-- After the run (win or lose), caught Pokemon are added to your **permanent roster**
-
-### 4.4 The Catch Risk/Reward
-
-This is the heart of the game's strategic tension:
-
-**Costs of catching:**
-- Poke Ball occupies an item belt slot that could have been a Potion or held item
-- The battle to weaken (not one-shot) takes more turns = more damage taken
-- A failed catch wastes the ball entirely
-- Mid-run caught Pokemon have random moves, may not synergize
-
-**Benefits of catching:**
-- Extra party member (4th, 5th, 6th body for the gauntlet)
-- Type coverage you didn't bring in your loadout
-- Permanent roster addition even if the run fails
-- Some Pokemon are only obtainable through catching in specific areas
-
----
-
-## 5. Item System
-
-### 5.1 Item Belt
-
-The belt has **limited slots** (starts at 3, upgradeable to 6). You fill it pre-run. Every slot is a tradeoff.
-
-**Consumable items (one-use during run):**
-
-| Item | Effect | Shop Cost |
-|------|--------|-----------|
-| Potion | Heal 50 HP | 50 |
-| Super Potion | Heal 120 HP | 150 |
-| Revive | Revive fainted Pokemon at 25% HP | 200 |
-| Full Heal | Cure status effects | 75 |
-| X Attack | +50% Attack for 3 turns | 100 |
-| X Defense | +50% Defense for 3 turns | 100 |
-| Poke Ball | Catch attempt, 1.0x rate | 100 |
-| Great Ball | Catch attempt, 1.5x rate | 250 |
-| Ultra Ball | Catch attempt, 2.0x rate | 500 |
-
-**Held items (passive, persist entire run, reusable across runs):**
-
-| Item | Effect | Unlock Cost |
-|------|--------|-------------|
-| Charcoal | Fire moves +20% damage | 300 |
-| Mystic Water | Water moves +20% damage | 300 |
-| Quick Claw | 20% chance to move first regardless of speed | 400 |
-| Leftovers | Heal 1/16 HP per turn | 500 |
-| Focus Sash | Survive one lethal hit at 1 HP (once per run) | 600 |
-| Scope Lens | Critical hit rate doubled | 400 |
-
-**Held items occupy belt slots too.** So a run loadout might be: 1 Potion, 1 Poke Ball, 1 Charcoal. Or: 2 Potions, 1 Revive. Or: 3 Poke Balls (pray).
-
-### 5.2 Items Found During Runs
-
-Item Cache rooms and some battle drops can give you items mid-run. These go into **overflow slots** (don't consume belt space). Limited to 2 overflow items. This rewards exploration without negating pre-run decisions.
-
----
-
-## 6. Meta-Progression
-
-### 6.1 Currencies
-
-| Currency | Earned From | Spent On |
-|----------|-------------|----------|
-| **PokeDollars** | Every battle (win or lose), bonus for gym clears | Shop items, Pokemon leveling, belt upgrades |
-| **Research Points** | Catching new species, completing research tasks | Unlocking new Pokemon, new move pools |
-| **Gym Badges** | Beating Gym Leaders | Unlock next area, prestige upgrades |
-
-### 6.2 Pokemon Leveling (Permanent)
-
-Each Pokemon in your roster has a **permanent level** (1-50). Leveling costs PokeDollars, scaling exponentially.
-
-| Level Range | Cost per Level | Stat Growth |
-|-------------|---------------|-------------|
-| 1-10 | 50-150 | Fast |
-| 11-20 | 200-500 | Medium |
-| 21-30 | 600-1500 | Medium |
-| 31-40 | 2000-5000 | Slow |
-| 41-50 | 6000-15000 | Very slow |
-
-**Leveling unlocks move pool expansion** — at certain levels, new moves become available for that Pokemon's loadout selection.
-
-**Evolution:** At specific levels (e.g., 16, 36), Pokemon evolve. Evolution is a significant stat boost + new moves added to pool. Visual change (new Midjourney art).
-
-### 6.3 Move Unlocks
-
-Each Pokemon has a **move pool** of 8-12 moves. Only 4-6 are available initially. The rest unlock via:
-
-- Leveling the Pokemon
-- Buying TMs from the shop
-- Elite Trainer drops (rare TMs)
-- Research task completion
-
-### 6.4 Professor's Lab (Global Upgrades)
-
-Permanent upgrades that apply to ALL runs. Purchased with PokeDollars.
-
-| Upgrade | Levels | Effect per Level | Max Effect |
-|---------|--------|-----------------|------------|
-| Tough Training | 5 | All Pokemon +3% HP | +15% HP |
-| Power Training | 5 | All Pokemon +3% Attack | +15% Attack |
-| Quick Feet | 5 | All Pokemon +3% Speed | +15% Speed |
-| Survival Kit | 3 | Rest stops heal +15% more | +45% healing |
-| Field Research | 3 | +10% catch rate | +30% catch rate |
-| Deep Pockets | 3 | +10% PokeDollars from battles | +30% currency |
-| Belt Expansion | 3 | +1 item belt slot | +3 slots (max 6) |
-| Bench Expansion | 2 | +1 bench slot for caught Pokemon | +2 slots (max 5) |
-| Lucky Finder | 3 | +10% chance for item drops | +30% item drops |
-
-### 6.5 Research Tasks
-
-Ongoing objectives that reward Research Points and unlock Pokemon.
-
-**Examples:**
-- "Catch 3 different Water types" → Unlock Squirtle
-- "Win a run without using any items" → Unlock Eevee
-- "Defeat 20 Poison types" → Unlock Nidoking
-- "Beat Area 3 with only Fire types" → Unlock Arcanine
-- "Catch a Pokemon in every area" → Unlock Ditto
-
-### 6.6 Starter Roster
-
-You begin the game with **3 Pokemon** (classic starter trio). All others are unlocked via catching or research tasks. Target: **40-60 Pokemon** for the full game, with 8-10 per area.
-
----
-
-## 7. AI & Encounter Design
-
-### 7.1 Wild Pokemon AI
-
-Simple and predictable so fights are fast:
-- Use super-effective moves if available
-- Otherwise use highest-power available move (respecting cooldowns)
-- Never switch (wild Pokemon are solo)
-- Occasionally use status moves (10% chance per turn if they have one)
-
-### 7.2 Trainer AI
-
-Smarter, more dangerous:
-- Prioritize type matchups
-- Switch Pokemon when at disadvantage
-- Use status moves strategically (burn physical attackers, paralyze fast Pokemon)
-- Use items (Trainers in later areas carry Potions)
-
-### 7.3 Gym Leader AI
-
-Deliberate and challenging:
-- Optimal type matchup switching
-- Held items on all Pokemon
-- Signature move: one unique high-power move on their ace Pokemon
-- Pre-programmed "strategies" (e.g., Brock leads with Geodude to scout, then switches to Onix)
-- Gym Leaders scale with player level (within a range) so they're never trivially easy on reruns
-
----
-
-## 8. UI/UX Design
-
-### 8.1 Screens
-
-1. **Home Base** — Hub screen. Buttons for: Start Run, Roster, Shop, Lab, Research, Settings
-2. **Roster** — Grid of unlocked Pokemon. Tap to view stats, moves, level up
-3. **Loadout** — Party selection (3 slots) + move assignment + belt filling. Drag-and-drop style.
-4. **Gauntlet Map** — Scrolling vertical strip showing rooms ahead. Current room highlighted. Next 3 rooms visible with icons showing type.
-5. **Battle Screen** — Your Pokemon bottom, enemy top. Move buttons with cooldown indicators. Party HP bars visible. Belt items accessible via button.
-6. **Catch Prompt** — After weakening a wild Pokemon, overlay: "Throw [Ball Type]?" with catch rate shown as a percentage.
-7. **Run Results** — Summary: rooms cleared, Pokemon caught, XP earned, currency earned. "New Pokemon!" fanfare for first catches.
-8. **Shop** — Item grid with costs. TM section. Ball section.
-9. **Lab** — Upgrade tree with levels and costs.
-
-### 8.2 Battle UI Layout (Mobile-First)
+Stats scale with level from species base stats (`src/core/statCalc.ts`):
 
 ```
-┌─────────────────────────────┐
-│  [Enemy Pokemon sprite]     │
-│  [Enemy HP bar]             │
-│  [Status icons]             │
-│                             │
-│                             │
-│  [Your Pokemon sprite]      │
-│  [Your HP bar] [Status]     │
-├─────────────────────────────┤
-│ Party: [P1 hp] [P2 hp] [P3]│
-├──────────┬──────────────────┤
-│ [Move 1] │ [Move 2]        │
-│  CD: 0   │  CD: 2 (greyed) │
-├──────────┼──────────────────┤
-│ [Move 3] │ [Move 4]        │
-│  CD: 0   │  CD: 1 (greyed) │
-├──────────┴──────────────────┤
-│ [Swap]  [Items]  [Run Info] │
-└─────────────────────────────┘
+HP     = floor((base * 2 * level) / 50) + level + 10
+others = floor((base * 2 * level) / 50) + 5
 ```
 
-- Moves on cooldown are **greyed out with a number showing turns remaining**
-- Tap a move = use it immediately (fast, no confirmation)
-- Party HP strip always visible so you know your squad's state
-- Speed timer bar at the top of the move area (draining left to right)
+The five stats are **HP / Attack / Defense / Speed / Special**.
 
-### 8.3 Gauntlet Map UI
+### 3.5 Type Chart
 
-Vertical scrolling. Your current position is a Poke Ball icon. Upcoming rooms show:
-- Icon for room type (sword = battle, tent = rest, chest = item, fork = fork)
-- Wild encounter rooms show the Pokemon's **type icon** (not the Pokemon itself — you know it's Fire type but not which Fire type). This enables tactical planning.
+**15 types** (full Gen 1 roster): Normal, Fire, Water, Grass, Electric, Rock, Ground, Psychic, Poison, Fighting, Flying, Bug, Ghost, Ice, Dragon.
+The effectiveness matrix lives in `src/data/typeChart.ts` and follows the classic Gen 1 chart. Helpers in `src/core/typeEffectiveness.ts` handle dual-type multiplication (can stack to 4× or 0.25×) and STAB detection.
 
----
+### 3.6 Status Effects
 
-## 9. Progression Pacing & Economy
+Four status types (`src/types.ts` → `StatusType`):
 
-### 9.1 Run Duration Targets
+| Status | Effect | Inflicted by (examples) |
+|---|---|---|
+| **Burn** | End-of-turn chip damage; emitted as `status_damage` | Ember, Fire Punch, Flamethrower, Fire Blast |
+| **Poison** | End-of-turn chip damage | Poison Sting, Sludge, Smog |
+| **Paralyze** | Chance to skip turn (`status_skip` event) | Thunder Wave, Body Slam, Thunderbolt |
+| **Sleep** | Turn skipped, emitted as `status_skip` | Sing, Hypnosis, Sleep Powder |
 
-| Area | Rooms | Target Time | Difficulty |
-|------|-------|-------------|------------|
-| Area 1 | 12 | 2-3 min | Tutorial |
-| Area 2-3 | 13-14 | 3-4 min | Easy |
-| Area 4-5 | 14-15 | 3-5 min | Medium |
-| Area 6-7 | 16 | 4-5 min | Hard |
-| Area 8 | 18 | 5-7 min | Very Hard |
+Moves carry a `{ type, chance }` effect object; the battle state machine rolls for application, emits `status_applied`, and tracks active statuses on `BattlePokemon.statusEffects`.
 
-### 9.2 Economy Targets
+### 3.7 Switching & Items In-Battle
 
-- **First gym clear:** ~3-5 runs (1 failed, 1-2 farming, 1 win)
-- **Average PokeDollars per run:** 100-300 (scales with area)
-- **Full roster unlock:** ~100+ runs across the whole game
-- **Max out Lab upgrades:** Long-term goal, 50+ hours
-- **Level a Pokemon to 50:** Dedicated investment, ~30-40 runs of currency
+- Switching costs your turn. The incoming Pokemon eats any enemy attack that resolves that turn.
+- If a Pokemon faints, the player is forced into a swap phase (`PLAYER_FORCE_SWAP`) — no alternate action allowed.
+- Items used in battle also cost your turn. Only ally-targeting items (Potion, Super Potion, Revive) are usable mid-battle.
+- XP is awarded to **every alive party member** when an enemy faints, not just the one that landed the KO. Fainted Pokemon earn nothing.
 
-### 9.3 Replayability Hooks
+### 3.8 Wild AI
 
-- **Random encounters each run** — different wild Pokemon, different rooms
-- **Catching completionist goal** — gotta catch 'em all
-- **Research tasks** — ongoing objectives across many runs
-- **Team experimentation** — try different party combos and loadouts
-- **Area replays** — farm earlier areas for currency/XP, still interesting because catches go to permanent roster
-- **Difficulty modes (future):** Hard mode gauntlets with better rewards
+Simple, implemented in `src/core/wildAI.ts`:
+
+- Use the highest-power **ready** move (respects cooldowns)
+- Weakly prefer super-effective moves
+- Never switch (wild encounters are solo, or the enemy AI cycles deterministically in multi-Pokemon boss fights)
 
 ---
 
-## 10. Data Architecture
+## 4. Worlds, Rooms, and Scaling
 
-### 10.1 Pokemon Definition
+### 4.1 World List
 
-```typescript
-interface Pokemon {
-  id: string;                    // "charmander"
-  name: string;                  // "Charmander"
-  types: Type[];                 // ["fire"]
-  baseStats: Stats;              // { hp: 39, atk: 52, def: 43, spd: 65, spc: 50 }
-  movePool: MovePoolEntry[];     // [{ moveId: "ember", unlockLevel: 1 }, ...]
-  evolutionLevel?: number;       // 16
-  evolvesInto?: string;          // "charmeleon"
-  catchRate: number;             // 0.3 - 0.7
-  rarity: "common" | "uncommon" | "rare";
-  areas: string[];               // ["ember-caverns"] — where this Pokemon appears
-  spriteKey: string;             // key for Midjourney art asset
+| # | Name | Theme / Pool |
+|---|---|---|
+| 0 | Viridian Path | Early routes (Pidgey, Rattata, Caterpie, Pikachu…) |
+| 1 | Mt. Moon Depths | Caves (Zubat, Geodude, Clefairy, Paras…) |
+| 2 | Cerulean Caves | Water/mixed (Psyduck, Magikarp, Krabby, Horsea…) |
+| 3 | Vermilion Docks | Electric/urban (Voltorb, Magnemite, Growlithe, Diglett…) |
+| 4 | Celadon Gardens | Grass/Poison/Bug (Bulbasaur, Tangela, Scyther, Oddish…) |
+| 5 | Saffron Tower | Psychic/Fighting (Abra, Jynx, Machop, Hitmonlee…) |
+| 6 | Cinnabar Volcano | Fire/Fossil (Charmander, Magmar, Omanyte, Aerodactyl…) |
+| 7 | Indigo Plateau | Legendary tier (Dratini, Lapras, Snorlax, Chansey…) |
+
+Each world has **25 rooms** (`MAPS_PER_WORLD = 25`). Clearing a room heals the party and advances `WorldProgress.currentMap`. Progress is saved per world.
+
+### 4.2 Scaling Formulas (`src/data/worlds.ts`)
+
+```
+gridSize         = min(15 + worldIndex + floor(mapIndex / 10), 20)
+encounterLevel   = 2 + worldIndex * 5 + floor(mapIndex / 5)
+enemyPartySize   = clamp(1 + floor(worldIndex / 2) + (mapIndex >= 20 ? 1 : 0), 1, 6)
+                   (World 0, rooms < 10 are always solo encounters for onboarding)
+encounterRate    = 0.15  (per-step, flat)
+goldPerBattle    = (15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount + rand(0..19)
+```
+
+### 4.3 Boss Rooms
+
+Rooms **5, 10, 15, 20, and 25** (1-indexed) are boss rooms. When the player steps onto the exit tile in a boss room, they're locked into a battle against a boss before advancing.
+
+- **Boss species** are rolled from a curated `WORLD_BOSSES` pool *separate from the world's regular encounter pool*. These are out-of-area standouts — e.g. Onix or Snorlax in Mt. Moon, Gyarados in Cerulean, Mewtwo/Articuno/etc. on Indigo Plateau.
+- **Boss level** = `encounterLevel + 3 + floor(worldIndex / 2)`, so bosses are a noticeable step up from the surrounding rooms.
+
+### 4.4 Map Generation
+
+`src/core/mapGenerator.ts` builds each dungeon on entry:
+
+1. Allocate a `gridSize × gridSize` grid of wall tiles.
+2. Choose a random edge and place the single **exit** tile at a random inner position on that edge. Store the exit direction.
+3. Carve an L-shaped **floor path** from the grid center to the exit.
+4. Randomly carve 35–55% of the remaining inner walls into extra floor tiles (must be adjacent to an existing floor — no orphan rooms).
+5. Sprinkle **gold drops** on carved tiles (~6% of path tiles, ~8% of extra floors) with values scaling by world index.
+6. Set per-tile encounter chance to `0.15 ± 0.03` jitter.
+
+Tiles track `{ type, revealed, visited, encounterChance, goldDrop, exitDirection? }`. Fog-of-war reveals the 8 neighboring tiles when the player steps onto a tile (`src/core/fogOfWar.ts`).
+
+### 4.5 In-Dungeon Systems
+
+- **D-pad movement** (on-screen or arrow keys). Each step consumes 1 turn of Repel if active and ticks every carried egg by 1 step.
+- **Encounters** roll on step using the tile's `encounterChance`. Repel fully blocks rolls for 20 steps after use. Boss rooms guarantee the boss battle on the exit tile regardless of encounter rolls.
+- **Gold** is picked up on step-on.
+- **Map item** reveals every tile immediately.
+- **Escape Rope** returns the party to town safely (no gold penalty).
+- **Party wipe** → lose 15% gold, return to town, party is not auto-healed.
+
+---
+
+## 5. Town Hub
+
+`MainMenuScene` is the hub between dungeons. Menu options:
+
+| Option | Function |
+|---|---|
+| **Pokemon** | View roster, inspect stats/moves, select the 3-Pokemon adventure party |
+| **Items** | View inventory |
+| **PokeMart** | Buy items (gated by world progress — see §6) |
+| **PokeCenter** | Heal entire roster to full HP + clear statuses for **20 gold** |
+| **Buy Pokemon** | Purchase Pokemon that have been **seen in battle** (not yet owned) |
+| **Eggs** | Buy eggs of three tiers; active eggs hatch after N dungeon steps |
+| **Adventure** | Enter the active world's next room |
+
+Secondary menus accessed from **Pokemon**:
+
+- **Train** — learn any move from the Pokemon's move pool whose unlock level ≤ current level (see §6.3)
+- **Evolve** — evolve eligible species once they meet their level requirement (see §9.2)
+
+---
+
+## 6. Economy & Shops
+
+### 6.1 PokeMart (Items)
+
+Items are world-gated so that the store grows as the player progresses:
+
+| Item | Cost | Unlocked after |
+|---|---|---|
+| Potion | 30 | World 0 |
+| Escape Rope | 40 | World 0 |
+| Repel | 50 | World 0 |
+| Map | 75 | World 0 |
+| Super Potion | 80 | World 1 |
+| Revive | 120 | World 2 |
+
+### 6.2 Buy Pokemon
+
+The player can purchase any Pokemon species they have **seen** in battle (tracked as `seenPokemon` in `GameState`) and do not currently own. Cost formula:
+
+```
+cost = floor((BST / 3 + 30) * rarityMultiplier)
+       rarityMult: common 1.0, uncommon 1.5, rare 3.0
+```
+
+Bought Pokemon join at **level 5** with auto-assigned level-appropriate moves.
+
+### 6.3 Move Training
+
+At the **Train** menu, a Pokemon can learn any move from its move pool whose `level` requirement is ≤ its current level. Cost per move:
+
+```
+cost = 15 + floor(power / 5) + (learnLevel * 2)
+```
+
+Learning a new move when the Pokemon already knows 4 requires replacing one — handled in-menu.
+
+### 6.4 Eggs
+
+Three tiers (`src/data/eggs.ts`):
+
+| Tier | Cost | Steps to Hatch | Pool Size | Color |
+|---|---|---|---|---|
+| **Common Egg** | 250g | 50 | 47 common species (Caterpie, Pidgey, Rattata, Magikarp…) | Green |
+| **Rare Egg** | 750g | 150 | 26 rare species (Bulbasaur, Eevee, Dratini, Scyther, Snorlax…) | Blue |
+| **Legendary Egg** | 2000g | 400 | 5 legendary species (Articuno, Zapdos, Moltres, Mewtwo, Mew) | Orange |
+
+Eggs are bought in town, stored on `GameState.eggs`, and decrement their `stepsRemaining` on every dungeon step. When one reaches 0, it hatches on the player's next town visit.
+
+**Hatch level:** `max(5, floor(avg level of top 3 roster Pokemon by level))`. This keeps hatched Pokemon useful regardless of when the player bought the egg.
+
+### 6.5 Battle Rewards
+
+- **Gold** on win: `(15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount + rand(0..19)`
+- **XP** per defeated enemy: `enemyLevel * 6 + 10 + rand(0..7)` — awarded to every alive party member
+- **Gold tile pickups** scale with world index and are rolled during map generation
+- **Defeat penalty:** -15% current gold, return to town
+
+### 6.6 Leveling Curve
+
+```
+xpToNextLevel(level) = level² * 8 + level * 15 + 30
+```
+
+Fast early levels, steep late game. Leveling up recalculates stats and grants the maxHP delta as a heal.
+
+---
+
+## 7. Items
+
+### 7.1 Battle Items (usable in `BattleScene`)
+
+| Item | Effect |
+|---|---|
+| Potion | Heal 30 HP (cannot revive or overheal) |
+| Super Potion | Heal 60 HP |
+| Revive | Restore a fainted Pokemon to 25% max HP |
+
+Using a battle item costs the player's turn.
+
+### 7.2 Field Items (usable in `MapScene`)
+
+| Item | Effect |
+|---|---|
+| Escape Rope | Leave the dungeon safely; return to town with no gold penalty |
+| Repel | Suppress all encounter rolls for the next 20 steps |
+| Map | Reveal every tile in the current dungeon |
+
+### 7.3 Starter Inventory
+
+New games begin with: **3 Potions**, **1 Escape Rope**, **100 gold**.
+
+---
+
+## 8. Data Model
+
+Key types from `src/types.ts`:
+
+```ts
+PokemonSpecies {
+  id, name, types[], baseStats, movePool[],
+  catchRate, rarity, spriteKey,
+  evolvesFrom?, evolutionLevel?
+}
+
+BattlePokemon {
+  species, level, currentXP, currentHP, maxHP,
+  stats, moves[], cooldowns[], statusEffects[]
+}
+
+MoveData {
+  id, name, type, power, accuracy, cooldown,
+  category: "physical" | "special",
+  effect?: { type: StatusType, chance: number }
+}
+
+EggInstance {
+  id, tier, speciesId, stepsRemaining
+}
+
+DungeonMap {
+  width, height, tiles[][], worldIndex, mapIndex
+}
+
+MapTile {
+  type: "floor" | "wall" | "exit",
+  revealed, visited,
+  encounterChance, goldDrop,
+  exitDirection?
+}
+
+GameState {
+  roster[], playerParty[], playerItems[], gold,
+  seenPokemon[], worlds[], activeWorld,
+  currentMap, playerX, playerY,
+  repelSteps, eggs[]
 }
 ```
 
-### 10.2 Move Definition
-
-```typescript
-interface Move {
-  id: string;                    // "flamethrower"
-  name: string;                  // "Flamethrower"
-  type: Type;                    // "fire"
-  power: number;                 // 90
-  accuracy: number;              // 100
-  cooldown: number;              // 2
-  category: "physical" | "special";
-  effect?: StatusEffect;         // { type: "burn", chance: 0.1 }
-  description: string;
-}
-```
-
-### 10.3 Gauntlet Room Definition
-
-```typescript
-interface GauntletRoom {
-  type: "wild" | "trainer" | "rest" | "item" | "fork" | "elite" | "gym";
-  encounterPool?: string[];      // Pokemon IDs that can appear
-  trainerData?: TrainerData;
-  rewards?: RewardTable;
-  difficulty: number;            // 1-10 scale, determines level scaling
-}
-```
-
-### 10.4 Player Save Data
-
-```typescript
-interface PlayerSave {
-  roster: PlayerPokemon[];       // all owned Pokemon with levels, moves
-  currency: { pokeDollars: number; researchPoints: number };
-  badges: string[];              // earned gym badges
-  labUpgrades: Record<string, number>;  // upgrade ID -> level
-  beltSlots: number;
-  benchSlots: number;
-  unlockedPokemon: string[];     // available in roster
-  researchTasks: ResearchProgress[];
-  settings: GameSettings;
-}
-```
+All battle logic mutates `BattlePokemon` objects in place. Same references persist across scene transitions via the Phaser registry — the town/map/battle scenes all read/write the same `GameState`.
 
 ---
 
-## 11. Technical Implementation Plan
+## 9. Progression Systems
 
-### 11.1 Tech Stack
+### 9.1 Experience & Leveling
 
-- **Engine:** Phaser 3
-- **Language:** TypeScript
-- **Bundler:** Vite
-- **State Management:** Custom game state manager (simple pub/sub)
-- **Save System:** localStorage with JSON serialization (IndexedDB as future upgrade)
-- **Art Pipeline:** Midjourney → exported PNGs → sprite sheets
+- XP is awarded per defeated enemy to every alive party member.
+- Level-ups recompute stats and heal the maxHP delta.
+- Moves do **not** auto-replace on level up — the player must visit **Train** in town to learn new moves from the move pool.
 
-### 11.2 Scene Structure (Phaser)
+### 9.2 Evolution
+
+Species with `evolvesFrom` + `evolutionLevel` can be evolved at the **Evolve** menu once their level meets the requirement. Evolution cost:
 
 ```
-BootScene          → Load core assets, show splash
-PreloadScene       → Load all game assets, progress bar
-HomeBaseScene      → Hub menu, navigation to sub-screens
-RosterScene        → Pokemon management
-ShopScene          → Buy items, TMs
-LabScene           → Global upgrades
-LoadoutScene       → Pre-run party/move/item selection
-GauntletScene      → Map view, room progression
-BattleScene        → Turn-based combat
-CatchScene         → Catch prompt overlay
-RunResultsScene    → Post-run summary
+cost = floor((evolvedSpeciesBST / 4 + 20) * rarityMultiplier)
+       rarityMult: common 1.0, uncommon 1.5, rare 2.0
 ```
 
-### 11.3 Core Systems to Build
+Evolving swaps the species reference and recalculates stats; moves and current HP are preserved.
 
-1. **Pokemon data system** — Load/query Pokemon, moves, types from data files
-2. **Type effectiveness engine** — Type chart lookup, STAB calculation
-3. **Damage calculator** — Gen 1-inspired formula with cooldown system
-4. **Battle state machine** — Turn flow, move selection, AI, switching, items
-5. **Cooldown manager** — Track per-move cooldowns, tick on turn end
-6. **Gauntlet generator** — Procedural room sequence based on area template + rules
-7. **Catch system** — Rate calculation, ball types, roster addition
-8. **Inventory/belt system** — Slot management, item use during battle
-9. **Meta-progression manager** — XP, leveling, currency, lab upgrades, research tasks
-10. **Save/load system** — Serialize/deserialize player state to localStorage
-11. **AI controller** — Wild, Trainer, and Gym Leader behavior profiles
-12. **UI framework** — Battle HUD, menus, transitions, mobile touch optimization
+### 9.3 Seen vs Owned
 
-### 11.4 Build Order (Recommended)
+- **Seen** (`seenPokemon`): species encountered in battle at least once. Drives **Buy Pokemon** availability.
+- **Owned** (`roster`): species purchased, hatched, or the starter. Only owned Pokemon can be placed in `playerParty`.
 
-**Phase 1 — Playable battle (1 Pokemon vs 1 Pokemon):**
-- Pokemon data + move data (hardcode 5-10 Pokemon, 20 moves)
-- Type chart
-- Damage calculator
-- Battle scene with cooldown moves
-- Basic UI (HP bars, move buttons with cooldown display)
-- Wild AI
+### 9.4 Party Selection
 
-**Phase 2 — Full battle (party of 3, items, switching):**
-- Party system (3 active + bench)
-- Switching mechanic
-- Item use in battle
-- Status effects (burn, poison, paralyze, trap)
-- Trainer AI
-
-**Phase 3 — Gauntlet loop:**
-- Gauntlet generator (room sequences)
-- Gauntlet map scene
-- Room transitions
-- Rest stops, item caches, forks
-- Catching system
-- Run results screen
-
-**Phase 4 — Meta-progression:**
-- Home base scene
-- Roster management (view, level up, assign moves)
-- Shop (buy items, TMs, balls)
-- Lab upgrades
-- Save/load system
-
-**Phase 5 — Content & polish:**
-- All 8 areas with encounter pools
-- Gym Leader fights with signature strategies
-- Research tasks
-- All 40-60 Pokemon with data
-- Evolution system
-- Midjourney art integration
-- Sound effects, music
-- Mobile optimization (touch, responsive layout)
-- Balancing pass (economy, difficulty curve, catch rates)
+The player picks up to **3 Pokemon** from the roster to form `playerParty` before entering Adventure. Parties can be reconfigured freely at the town. The active party member in battle is tracked via `playerActiveIndex` on the battle state machine.
 
 ---
 
-## 12. Verification & Testing
+## 10. Save System
 
-- **Battle math:** Unit tests for damage calculator, type effectiveness, cooldown ticking
-- **Gauntlet generation:** Verify room rules (no rest in first 3, at least 1 fork, etc.)
-- **Catch rate:** Simulate 1000 catches to verify rates match expected %
-- **Economy:** Play through areas 1-3 and verify pacing (3-5 runs per gym feels right)
-- **Save/load:** Save mid-progression, reload, verify state is intact
-- **Mobile:** Test on iOS Safari and Android Chrome — touch targets, no scroll issues, performance
-- **Balance:** Full playthrough of all 8 areas, tracking currency earned vs spent, time per run
+- **Key:** `pokemonGauntlet_save` in `localStorage`
+- **Format:** JSON. Pokemon are serialized as `{ speciesId, level, currentXP, currentHP }` and reconstructed through `createBattlePokemon` on load (so full stats/moves/cooldowns re-derive from data).
+- **What's saved:** roster, playerParty, playerItems, gold, seenPokemon, worlds progress, activeWorld, eggs
+- **What's NOT saved:** `currentMap`, `playerX/Y`, `repelSteps`, active battle state. Quitting mid-dungeon forfeits that run.
+- **Single save slot.** "Delete Save" from the Title screen wipes it.
+
+---
+
+## 11. Audio & Visuals
+
+- **Sprites:** 16×16 pixel art for all 151 Pokemon, each defined as a palette + grid in `src/sprites/pokemonSprites.ts` and rendered to Phaser textures during `PreloadScene`. Nearest-neighbor filtering; no external PNGs.
+- **UI:** monospace text, flat rectangles, type-colored accents (`src/ui/TypeColors.ts` maps all 15 types to hex colors).
+- **Music:** procedural Web Audio via `src/audio/MusicManager.ts`. Distinct loops for map exploration and battles. No audio files.
+- **SFX:** none currently (intentional — all sound comes from procedural music).
+
+---
+
+## 12. Testing
+
+Pure-logic modules live in `src/core/` and `src/data/` with zero Phaser imports, making them trivially unit-testable. Current test coverage (`tests/`):
+
+- `damageCalc.test.ts` — damage formula, STAB, effectiveness, random roll bounds
+- `typeEffectiveness.test.ts` — type chart lookups, dual-type multiplication
+- `cooldownManager.test.ts` — tick and reset behavior
+- `battleStateMachine.test.ts` — turn flow, action resolution, event emission
+- `wildAI.test.ts` — AI move selection
+
+Tests use injectable RNG for determinism. Run with `npm test`.
+
+---
+
+## 13. Future Directions
+
+These ideas were in earlier drafts or are natural next steps — **none of them are implemented yet**. Listed here so they don't get confused with shipped features.
+
+- **Wild catching** — currently the only way to acquire new Pokemon is Buy Pokemon or Eggs. A classic catch flow (weaken → throw ball → catch rate roll) is a candidate for a future update. `catchRate` fields already exist on species data.
+- **Trainer battles** as a distinct room type with scripted teams and AI switching, separate from wild encounters.
+- **Gym Leader bosses per world** with signature moves and held items (current bosses are rare species, not themed leaders).
+- **Held items** (Charcoal, Leftovers, Focus Sash, Quick Claw, Scope Lens…) granting passive effects.
+- **TMs** as an alternative move-learning path alongside the Train shop.
+- **Research tasks** — ongoing objectives unlocking Pokemon or upgrades.
+- **Professor's Lab global upgrades** (+% HP/Atk/Spd, more item slots, more bench slots, better catch rates, etc.).
+- **Speed timer per turn** for faster combat (currently turns are untimed).
+- **Status effects expansion** — Freeze, Confuse, traps (Wrap, Bind) with their unique rules.
+- **Multi-save slots**, cloud sync, or export/import.
+- **Difficulty modes** for replaying cleared worlds with better rewards.
+
+When any of these ship, move the relevant bullet out of this section and into the appropriate numbered section above.
