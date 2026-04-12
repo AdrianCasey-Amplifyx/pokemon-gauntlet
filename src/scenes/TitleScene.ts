@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { getAllSlotInfo, loadGame, deleteSlotSave, setActiveSlot, type SaveSlotInfo } from "../core/saveManager.ts";
+import { getAllSlotInfo, loadGame, deleteSlotSave, setActiveSlot, saveGame, createTestGameState, type SaveSlotInfo } from "../core/saveManager.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 
 const GAME_W = 390;
@@ -91,14 +91,17 @@ export class TitleScene extends Phaser.Scene {
     }));
 
     if (slot.empty) {
-      // Empty slot — show "New Game" button
-      overlay.add(this.add.text(cardX, y + 55, "- Empty -", {
+      // Empty slot — show "New Game" button (plus a Dev Test button on slot 0)
+      overlay.add(this.add.text(cardX, y + 42, "- Empty -", {
         fontSize: "13px", fontFamily: "monospace", color: "#555566",
       }).setOrigin(0.5));
 
-      const newBg = this.add.rectangle(cardX, y + 100, 180, 36, 0x338855).setOrigin(0.5).setStrokeStyle(1, 0x44aa66);
+      const isDevSlot = slot.slot === 0;
+      const newY = isDevSlot ? y + 80 : y + 100;
+
+      const newBg = this.add.rectangle(cardX, newY, 180, 32, 0x338855).setOrigin(0.5).setStrokeStyle(1, 0x44aa66);
       overlay.add(newBg);
-      overlay.add(this.add.text(cardX, y + 100, "NEW GAME", {
+      overlay.add(this.add.text(cardX, newY, "NEW GAME", {
         fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
       }).setOrigin(0.5));
       newBg.setInteractive();
@@ -107,6 +110,22 @@ export class TitleScene extends Phaser.Scene {
         this.registry.remove("gameState");
         this.scene.start("StarterSelectScene");
       });
+
+      if (isDevSlot) {
+        const devBg = this.add.rectangle(cardX, y + 118, 220, 32, 0x664422).setOrigin(0.5).setStrokeStyle(1, 0xaa7733);
+        overlay.add(devBg);
+        overlay.add(this.add.text(cardX, y + 118, "DEV: TEST SAVE (5000g)", {
+          fontSize: "12px", fontFamily: "monospace", color: "#ffcc77", fontStyle: "bold",
+        }).setOrigin(0.5));
+        devBg.setInteractive();
+        devBg.on("pointerdown", () => {
+          setActiveSlot(slot.slot);
+          const state = createTestGameState();
+          this.registry.set("gameState", state);
+          saveGame(state);
+          this.scene.start("MainMenuScene");
+        });
+      }
     } else {
       // Occupied slot — show summary + Continue / Delete
       const names = slot.pokemonNames?.join(", ") ?? "???";

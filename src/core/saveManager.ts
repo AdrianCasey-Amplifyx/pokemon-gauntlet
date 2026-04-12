@@ -3,7 +3,8 @@ import { getPokemon } from "../data/pokemon.ts";
 import { getMove } from "../data/moves.ts";
 import { ITEMS } from "../data/items.ts";
 import { TOTAL_WORLDS } from "../data/worlds.ts";
-import { calculateAllStats, getMovesForLevel } from "./statCalc.ts";
+import { createEgg } from "../data/eggs.ts";
+import { calculateAllStats, createBattlePokemon, getMovesForLevel } from "./statCalc.ts";
 
 const SAVE_KEY_PREFIX = "pokemonGauntlet_save_";
 const LEGACY_SAVE_KEY = "pokemonGauntlet_save";
@@ -213,6 +214,57 @@ export function deleteSave(): void {
 
 export function deleteSlotSave(slot: number): void {
   localStorage.removeItem(slotKey(slot));
+}
+
+/**
+ * Dev helper: build an advanced GameState for manually testing features
+ * (notably the egg shop and hatch flow) without playing through early game.
+ * Spawns a level-30 evolved-starter party, 5000g, full item belt, worlds 0-2
+ * unlocked, and one common + one rare egg already in the bag.
+ */
+export function createTestGameState(): GameState {
+  const charmeleon = createBattlePokemon(getPokemon("charmeleon"), 30);
+  const wartortle = createBattlePokemon(getPokemon("wartortle"), 30);
+  const ivysaur = createBattlePokemon(getPokemon("ivysaur"), 30);
+  const pikachu = createBattlePokemon(getPokemon("pikachu"), 25);
+  const pidgeotto = createBattlePokemon(getPokemon("pidgeotto"), 25);
+
+  const roster = [charmeleon, wartortle, ivysaur, pikachu, pidgeotto];
+  const playerParty = [charmeleon, wartortle, ivysaur];
+
+  const worlds: WorldProgress[] = Array.from({ length: TOTAL_WORLDS }, (_, i) => ({
+    currentMap: 0,
+    unlocked: i <= 2,
+  }));
+
+  const playerItems = [
+    { item: ITEMS.potion, quantity: 5 },
+    { item: ITEMS.super_potion, quantity: 3 },
+    { item: ITEMS.revive, quantity: 2 },
+    { item: ITEMS.escape_rope, quantity: 3 },
+    { item: ITEMS.repel, quantity: 2 },
+    { item: ITEMS.dungeon_map, quantity: 1 },
+  ];
+
+  return {
+    roster,
+    playerParty,
+    playerItems,
+    gold: 5000,
+    seenPokemon: [
+      "charmander", "squirtle", "bulbasaur",
+      "pikachu", "pidgey", "pidgeotto",
+      "rattata", "caterpie", "weedle",
+      "geodude", "zubat", "clefairy",
+    ],
+    worlds,
+    activeWorld: 0,
+    currentMap: null,
+    playerX: 0,
+    playerY: 0,
+    repelSteps: 0,
+    eggs: [createEgg("common"), createEgg("rare")],
+  };
 }
 
 /** Migrate old single-key save to slot 0 if it exists */
