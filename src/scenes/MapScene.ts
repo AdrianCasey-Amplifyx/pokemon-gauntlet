@@ -219,12 +219,22 @@ export class MapScene extends Phaser.Scene {
         fontSize: "6px", fontFamily: "monospace", color: fainted ? "#cc4444" : "#888888",
       });
 
-      // XP bar
+      // XP bar + numeric — bg and fill share origin so they align to the pixel,
+      // and the numeric text makes it obvious whether the bar is in sync with
+      // the underlying currentXP (the detailed Pokemon modal is the source of
+      // truth for XP state).
       const xpY = barY + 14;
       const needed = xpToNextLevel(pokemon.level);
-      const xpPct = Math.min(pokemon.currentXP / needed, 1);
-      this.add.rectangle(barX + barW / 2, xpY + 2, barW, 3, 0x222244).setOrigin(0.5);
-      if (xpPct > 0) this.add.rectangle(barX, xpY, xpPct * barW, 3, 0x4488cc).setOrigin(0, 0);
+      const rawXP = Math.max(0, pokemon.currentXP);
+      const xpPct = Math.min(rawXP / needed, 1);
+      const xpH = 4;
+      this.add.rectangle(barX, xpY, barW, xpH, 0x222244).setOrigin(0, 0);
+      if (xpPct > 0) {
+        this.add.rectangle(barX, xpY, Math.max(1, xpPct * barW), xpH, 0x4488cc).setOrigin(0, 0);
+      }
+      this.add.text(barX, xpY + xpH + 1, `XP ${rawXP}/${needed}`, {
+        fontSize: "6px", fontFamily: "monospace", color: "#4488cc",
+      });
     });
   }
 
