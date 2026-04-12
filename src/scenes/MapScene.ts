@@ -151,10 +151,11 @@ export class MapScene extends Phaser.Scene {
     const dpadCx = GAME_W / 2;
     this.createDPad(dpadCx, dpadCy);
 
-    // Items + Escape buttons at very bottom
+    // Pokemon + Items + Escape buttons at very bottom
     const btnRow = bottomY - 30;
-    this.createBottomButton(GAME_W / 2 - 70, btnRow, "ITEMS", 0x885533, () => this.showItemModal());
-    this.createBottomButton(GAME_W / 2 + 70, btnRow, "ESCAPE", 0x553333, () => this.useEscapeRope());
+    this.createBottomButton(65, btnRow, "POKEMON", 0x335588, () => this.showPokemonModal(), 110);
+    this.createBottomButton(195, btnRow, "ITEMS", 0x885533, () => this.showItemModal(), 110);
+    this.createBottomButton(325, btnRow, "ESCAPE", 0x553333, () => this.useEscapeRope(), 110);
 
     // Tap-to-move
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
@@ -310,11 +311,11 @@ export class MapScene extends Phaser.Scene {
   }
 
   // === BOTTOM BUTTONS ===
-  private createBottomButton(cx: number, cy: number, label: string, color: number, onClick: () => void): void {
+  private createBottomButton(cx: number, cy: number, label: string, color: number, onClick: () => void, width: number = 120): void {
     const btn = this.add.container(cx, cy);
-    btn.add(this.add.rectangle(0, 0, 120, 36, color).setOrigin(0.5).setStrokeStyle(1, 0x666666));
+    btn.add(this.add.rectangle(0, 0, width, 36, color).setOrigin(0.5).setStrokeStyle(1, 0x666666));
     btn.add(this.add.text(0, 0, label, { fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0.5));
-    btn.setSize(120, 36).setInteractive();
+    btn.setSize(width, 36).setInteractive();
     btn.on("pointerdown", onClick);
   }
 
@@ -621,6 +622,98 @@ export class MapScene extends Phaser.Scene {
   }
 
   // === ITEMS MODAL ===
+  private showPokemonModal(): void {
+    const modal = this.add.container(0, 0).setDepth(200);
+
+    const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.92).setOrigin(0.5);
+    bg.setInteractive();
+    modal.add(bg);
+
+    modal.add(this.add.text(GAME_W / 2, 40, "YOUR POKEMON", {
+      fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5));
+
+    const partySet = new Set(this.gameState.playerParty);
+    const cardH = 76;
+    const startY = 70;
+    const maxY = GAME_H - 95;
+
+    this.gameState.roster.forEach((pokemon, i) => {
+      const y = startY + i * (cardH + 4);
+      if (y + cardH > maxY) return; // truncate overflow
+
+      const x = 20;
+      const w = GAME_W - 40;
+      const inParty = partySet.has(pokemon);
+      const fainted = pokemon.currentHP <= 0;
+
+      modal.add(
+        this.add.rectangle(x + w / 2, y + cardH / 2, w, cardH, fainted ? 0x1a1111 : 0x1a1a2e)
+          .setOrigin(0.5).setStrokeStyle(1, inParty ? 0x66aa66 : 0x333355)
+      );
+
+      if (this.textures.exists(pokemon.species.spriteKey)) {
+        const img = this.add.image(x + 28, y + cardH / 2, pokemon.species.spriteKey)
+          .setDisplaySize(44, 44).setOrigin(0.5).setAlpha(fainted ? 0.4 : 1);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        modal.add(img);
+      }
+
+      modal.add(this.add.text(x + 56, y + 6, pokemon.species.name, {
+        fontSize: "13px", fontFamily: "monospace", color: fainted ? "#886666" : "#ffffff", fontStyle: "bold",
+      }));
+      modal.add(this.add.text(x + w - 5, y + 6, `Lv${pokemon.level}`, {
+        fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa",
+      }).setOrigin(1, 0));
+
+      if (inParty) {
+        modal.add(this.add.text(x + 56, y + 22, "PARTY", {
+          fontSize: "7px", fontFamily: "monospace", color: "#66cc66", fontStyle: "bold",
+        }));
+      }
+
+      // HP bar + numeric
+      const barX = x + 100;
+      const hpY = y + 22;
+      const barW = w - 112;
+      modal.add(this.add.rectangle(barX + barW / 2, hpY + 3, barW, 6, 0x333333).setOrigin(0.5));
+      const hpPct = pokemon.maxHP > 0 ? pokemon.currentHP / pokemon.maxHP : 0;
+      const hpColor = hpPct > 0.5 ? 0x22cc44 : hpPct > 0.25 ? 0xddcc22 : 0xcc2222;
+      if (hpPct > 0) {
+        modal.add(this.add.rectangle(barX, hpY, hpPct * barW, 6, hpColor).setOrigin(0, 0));
+      }
+      modal.add(this.add.text(barX, hpY + 8, `HP ${pokemon.currentHP}/${pokemon.maxHP}`, {
+        fontSize: "7px", fontFamily: "monospace", color: "#888888",
+      }));
+
+      // XP bar + numeric
+      const xpY = hpY + 18;
+      const needed = xpToNextLevel(pokemon.level);
+      const xpPct = Math.min(pokemon.currentXP / needed, 1);
+      modal.add(this.add.rectangle(barX + barW / 2, xpY + 3, barW, 5, 0x222244).setOrigin(0.5));
+      if (xpPct > 0) {
+        modal.add(this.add.rectangle(barX, xpY, xpPct * barW, 5, 0x4488cc).setOrigin(0, 0));
+      }
+      modal.add(this.add.text(barX, xpY + 7, `XP ${pokemon.currentXP}/${needed}`, {
+        fontSize: "7px", fontFamily: "monospace", color: "#4488cc",
+      }));
+
+      // Stats line
+      const s = pokemon.stats;
+      modal.add(this.add.text(x + 56, y + cardH - 12, `ATK ${s.atk}  DEF ${s.def}  SPD ${s.spd}  SPC ${s.spc}`, {
+        fontSize: "7px", fontFamily: "monospace", color: "#777799",
+      }));
+    });
+
+    const cancelBg = this.add.rectangle(GAME_W / 2, GAME_H - 60, 180, 44, 0x553333).setOrigin(0.5).setStrokeStyle(2, 0x774444);
+    modal.add(cancelBg);
+    modal.add(this.add.text(GAME_W / 2, GAME_H - 60, "CLOSE", {
+      fontSize: "16px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5));
+    cancelBg.setInteractive();
+    cancelBg.on("pointerdown", () => modal.destroy(true));
+  }
+
   private showItemModal(): void {
     // Full screen modal overlay
     const modal = this.add.container(0, 0).setDepth(200);

@@ -220,6 +220,7 @@ Tiles track `{ type, revealed, visited, encounterChance, goldDrop, exitDirection
 - **Map item** reveals every tile immediately.
 - **Escape Rope** returns the party to town safely (no gold penalty).
 - **Party wipe** → lose 15% gold, return to town, party is not auto-healed.
+- **Bottom button row** has three buttons: **POKEMON** (opens the full roster view with HP, numeric XP, stats, and a PARTY marker on active members), **ITEMS** (inventory + egg progress), and **ESCAPE** (uses an Escape Rope). The Pokemon view mirrors the town's roster screen so XP progression can be tracked mid-run without leaving the dungeon.
 
 ---
 
