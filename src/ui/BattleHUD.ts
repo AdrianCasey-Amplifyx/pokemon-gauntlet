@@ -592,8 +592,18 @@ export class BattleHUD {
       const bgColor = canTarget ? 0x222244 : 0x222222;
       const cardBg = this.scene.add.rectangle(0, 0, 340, 80, bgColor, 0.9).setOrigin(0.5).setStrokeStyle(2, 0x444466);
 
-      const color = TYPE_COLORS[pokemon.species.types[0]];
-      const sprite = this.scene.add.rectangle(-130, 0, 50, 50, color).setOrigin(0.5).setStrokeStyle(2, 0xffffff, 0.3);
+      let sprite: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+      const spriteKey = pokemon.species.spriteKey;
+      if (this.scene.textures.exists(spriteKey)) {
+        // Full-alpha even when non-targetable — disabled state is conveyed by
+        // card color and text, not a dim sprite (same fix as MapScene/MainMenu).
+        const img = this.scene.add.image(-130, 0, spriteKey).setOrigin(0.5).setDisplaySize(50, 50);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        sprite = img;
+      } else {
+        const color = TYPE_COLORS[pokemon.species.types[0]];
+        sprite = this.scene.add.rectangle(-130, 0, 50, 50, color).setOrigin(0.5).setStrokeStyle(2, 0xffffff, 0.3);
+      }
 
       const nameText = this.scene.add
         .text(-80, -15, pokemon.species.name, { fontSize: "15px", fontFamily: "monospace", color: canTarget ? "#ffffff" : "#666666", fontStyle: "bold" })
