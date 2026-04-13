@@ -143,11 +143,19 @@ export class BattleHUD {
       const row = Math.floor(i / 2);
       const btn = new MoveButton(this.scene, gridStartX + col * gapX, gridStartY + row * gapY);
 
+      // Always wire the click handler for every slot — updateMoveButtons
+      // toggles visibility based on the current pokemon's move count, so
+      // slots without a move are inert until a 4-move pokemon is switched
+      // in. Without this, a pokemon with a 4th move that wasn't the lead
+      // would have a dead button (e.g. switching to Butterfree with Gust).
+      const moveIndex = i;
+      btn.onClick(() => callbacks.onMoveSelect(moveIndex));
+
       if (i < playerPokemon.moves.length) {
         btn.setMove(playerPokemon.moves[i]);
         btn.setCooldown(playerPokemon.cooldowns[i]);
-        const moveIndex = i;
-        btn.onClick(() => callbacks.onMoveSelect(moveIndex));
+      } else {
+        btn.setVisible(false);
       }
 
       this.moveButtons.push(btn);
