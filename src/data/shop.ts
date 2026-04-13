@@ -46,6 +46,8 @@ export const SHOP_ITEMS_SCALED: (ShopItem & { worldRequired: number })[] = [
   { itemId: "moon_stone", cost: 600, worldRequired: 3 },
 
   // TMs
+  { itemId: "tm_headbutt", cost: 250, worldRequired: 0 },
+  { itemId: "tm_body_slam", cost: 350, worldRequired: 0 },
   { itemId: "tm_surf", cost: 800, worldRequired: 2 },
   { itemId: "tm_shadow_ball", cost: 800, worldRequired: 3 },
   { itemId: "tm_thunderbolt", cost: 900, worldRequired: 2 },

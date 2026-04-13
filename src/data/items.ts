@@ -213,6 +213,16 @@ export const ITEMS: Record<string, ItemData> = {
   },
 
   // TMs (param = moveId to teach)
+  tm_headbutt: {
+    id: "tm_headbutt", name: "TM Headbutt",
+    description: "Teaches Headbutt at the Training Centre.",
+    category: "tm", target: "ally", param: "headbutt",
+  },
+  tm_body_slam: {
+    id: "tm_body_slam", name: "TM Body Slam",
+    description: "Teaches Body Slam at the Training Centre.",
+    category: "tm", target: "ally", param: "body_slam",
+  },
   tm_thunderbolt: {
     id: "tm_thunderbolt", name: "TM Thunderbolt",
     description: "Teaches Thunderbolt at the Training Centre.",

@@ -306,6 +306,8 @@ Items are world-gated so that the store grows as the player progresses. The Poke
 
 | TM | Move | Cost | Unlocked after |
 |---|---|---|---|
+| TM Headbutt | Headbutt (Normal, Pow 45, CD 1) | 250 | Start |
+| TM Body Slam | Body Slam (Normal, Pow 55, CD 2) | 350 | Start |
 | TM Surf | Surf (Water, Pow 60, CD 2) | 800 | World 2 |
 | TM Shadow Ball | Shadow Ball (Ghost, Pow 55, CD 2) | 800 | World 3 |
 | TM Thunderbolt | Thunderbolt (Electric, Pow 60, CD 2) | 900 | World 2 |

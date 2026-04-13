@@ -4,6 +4,7 @@ All notable game changes are recorded here. Newest entries at the top. See `CLAU
 
 ## 2026-04-13
 
+- **content:** **Two starter TMs** — `TM Headbutt` (Normal, Pow 45, CD 1, 250g) and `TM Body Slam` (Normal, Pow 55, CD 2, 350g) are now sold from the very first town visit (`worldRequired: 0`), giving players an immediate way to test the Training Centre TM flow without grinding to world 2. Like all TMs they're type-matched, so a Normal-type pokemon (Rattata, Pidgey, Eevee, Jigglypuff, Meowth, etc.) is required to actually learn them.
 - **ui:** **Roster & Items screens gain sort + favourites** — the Pokemon screen now has a `LEVEL / TYPE / A-Z` sort bar at the top, and every roster card has a tappable ☆/★ star at its top-right corner. Starred pokemon are pinned to the top of the list regardless of the active sort, so your mains are always one tap away. Items gets a `A-Z / QTY` sort bar that re-orders each category section (Medicine, Battle, Vitamins, etc.) by name or quantity while preserving the category grouping. Favourite state persists across sessions via a new optional `fav` field on the saved pokemon record (old saves load cleanly with everyone unstarred). Touched `BattlePokemon.isFavourite`, `createBattlePokemon`, `saveManager` serialize/deserialize, and `MainMenuScene.drawRoster`/`drawItems`. Roster card tightened once more (h=58, spacing=64) to make room for the sort bar without losing the 10-per-page pagination from yesterday.
 
 ## 2026-04-12
