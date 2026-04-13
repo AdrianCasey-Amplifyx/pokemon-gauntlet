@@ -243,6 +243,13 @@ Secondary menus accessed from **Pokemon**:
 - **Train** — learn any move from the Pokemon's move pool whose unlock level ≤ current level (see §6.3)
 - **Evolve** — evolve eligible species once they meet their level requirement (see §9.2)
 
+### 5.1.1 Roster & Items QoL
+
+- **Pagination** — the Pokemon, Select Party, Train, and item-use target screens all cap at **10 cards per page** with a `< PREV` / Page X/Y / `NEXT >` strip above the BACK button. State is preserved across in-screen redraws (toggling a party slot, tapping a star) so the user doesn't snap back to page 1.
+- **Roster sort** — the Pokemon screen has a `LEVEL` (default, high → low) / `TYPE` (alphabetical by primary type) / `A-Z` toggle at the top. Favourites (see below) always pin to the top within the active sort.
+- **Favourites** — every roster card has a tappable ☆/★ star at its top-right corner. Tapping toggles `BattlePokemon.isFavourite`, which persists via an optional `fav` field on the saved pokemon record. Old saves load with everyone unstarred.
+- **Items sort** — the Items screen has an `A-Z` (default) / `QTY` (high → low) toggle that re-orders entries *within* each category section (Medicine, Battle, Vitamins, Stones, Candy, TMs, Field) while preserving the category grouping.
+
 ---
 
 ## 6. Economy & Shops
