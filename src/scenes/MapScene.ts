@@ -539,16 +539,25 @@ export class MapScene extends Phaser.Scene {
     const world = this.gameState.worlds[worldIdx];
     world.currentMap++;
 
-    if (world.currentMap >= MAPS_PER_WORLD && worldIdx + 1 < this.gameState.worlds.length) {
+    const worldCleared = world.currentMap >= MAPS_PER_WORLD;
+    const nextExists = worldIdx + 1 < this.gameState.worlds.length;
+
+    // Clearing the final room of a world: unlock the next world AND
+    // auto-advance activeWorld so the town hub + next Adventure start
+    // at world N+1 room 1, not world N room 26/25.
+    if (worldCleared && nextExists) {
       this.gameState.worlds[worldIdx + 1].unlocked = true;
+      this.gameState.activeWorld = worldIdx + 1;
     }
 
     this.gameState.currentMap = null;
     this.registry.set("roomCleared", true);
     saveGame(this.gameState);
 
-    const msg = world.currentMap >= MAPS_PER_WORLD
-      ? `World Complete!\nNext world unlocked!`
+    const msg = worldCleared
+      ? (nextExists
+          ? `World Complete!\nAdvancing to\n${WORLD_NAMES[worldIdx + 1]}!`
+          : `All Worlds Complete!`)
       : `Room ${world.currentMap}/${MAPS_PER_WORLD} cleared!`;
 
     const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5).setDepth(200).setAlpha(0);

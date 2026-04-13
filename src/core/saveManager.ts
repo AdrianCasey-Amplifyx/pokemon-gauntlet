@@ -2,7 +2,7 @@ import type { GameState, BattlePokemon, WorldProgress, EggInstance, Stats } from
 import { getPokemon } from "../data/pokemon.ts";
 import { getMove } from "../data/moves.ts";
 import { ITEMS } from "../data/items.ts";
-import { TOTAL_WORLDS } from "../data/worlds.ts";
+import { MAPS_PER_WORLD, TOTAL_WORLDS } from "../data/worlds.ts";
 import { createEgg } from "../data/eggs.ts";
 import { applyStatBonuses, calculateAllStats, createBattlePokemon, getMovesForLevel, zeroStats } from "./statCalc.ts";
 
@@ -157,6 +157,20 @@ function buildGameState(data: SaveData): GameState {
     }
   }
 
+  // Heal old saves that got stuck on a cleared world (world.currentMap
+  // >= MAPS_PER_WORLD with activeWorld still pointing at it) — pre-fix
+  // behaviour left activeWorld unchanged after clearing the final room,
+  // causing the town hub to show "Room 26/25" forever. Advance to the
+  // next unlocked world if one exists.
+  let activeWorld = data.activeWorld;
+  if (
+    activeWorld + 1 < worlds.length &&
+    worlds[activeWorld].currentMap >= MAPS_PER_WORLD
+  ) {
+    worlds[activeWorld + 1].unlocked = true;
+    activeWorld = activeWorld + 1;
+  }
+
   return {
     roster,
     playerParty,
@@ -164,7 +178,7 @@ function buildGameState(data: SaveData): GameState {
     gold: data.gold,
     seenPokemon: data.seenPokemon ?? [],
     worlds,
-    activeWorld: data.activeWorld,
+    activeWorld,
     currentMap: null,
     playerX: 0,
     playerY: 0,
