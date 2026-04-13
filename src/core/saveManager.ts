@@ -23,6 +23,7 @@ interface SavePokemon {
   currentHP: number;
   moveIds?: string[]; // persisted move choices (optional for backwards compat)
   statBonuses?: Stats; // vitamin bonuses, optional for backwards compat
+  fav?: boolean; // starred in the roster UI, optional for backwards compat
 }
 
 function hasAnyBonus(s: Stats): boolean {
@@ -51,6 +52,9 @@ function serializePokemon(p: BattlePokemon): SavePokemon {
   };
   if (hasAnyBonus(p.statBonuses)) {
     save.statBonuses = { ...p.statBonuses };
+  }
+  if (p.isFavourite) {
+    save.fav = true;
   }
   return save;
 }
@@ -81,6 +85,7 @@ function deserializePokemon(s: SavePokemon): BattlePokemon {
     statusEffects: [],
     statBonuses,
     battleBoosts: { atk: 0, def: 0, spd: 0, spc: 0 },
+    isFavourite: s.fav === true,
   };
 }
 

@@ -131,5 +131,6 @@ export function createBattlePokemon(
     statusEffects: [],
     statBonuses: zeroStats(),
     battleBoosts: { atk: 0, def: 0, spd: 0, spc: 0 },
+    isFavourite: false,
   };
 }

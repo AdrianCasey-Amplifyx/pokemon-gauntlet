@@ -2,6 +2,10 @@
 
 All notable game changes are recorded here. Newest entries at the top. See `CLAUDE.md` → *Changelog Policy* for the format and rules.
 
+## 2026-04-13
+
+- **ui:** **Roster & Items screens gain sort + favourites** — the Pokemon screen now has a `LEVEL / TYPE / A-Z` sort bar at the top, and every roster card has a tappable ☆/★ star at its top-right corner. Starred pokemon are pinned to the top of the list regardless of the active sort, so your mains are always one tap away. Items gets a `A-Z / QTY` sort bar that re-orders each category section (Medicine, Battle, Vitamins, etc.) by name or quantity while preserving the category grouping. Favourite state persists across sessions via a new optional `fav` field on the saved pokemon record (old saves load cleanly with everyone unstarred). Touched `BattlePokemon.isFavourite`, `createBattlePokemon`, `saveManager` serialize/deserialize, and `MainMenuScene.drawRoster`/`drawItems`. Roster card tightened once more (h=58, spacing=64) to make room for the sort bar without losing the 10-per-page pagination from yesterday.
+
 ## 2026-04-12
 
 - **ui:** **Long roster lists now paginate** — Pokemon, Select Party, Train, and the item-use target picker cap at 10 cards per page with a `< PREV` / Page X/Y / `NEXT >` strip above the BACK button. Previously the roster screen stopped drawing at 9 cards, Select Party at 12, and Train at 11 because each list did a hard `y > GAME_H - N` early-return instead of paging. Shared `drawPagination` / `pagedSlice` / `clampListPage` helpers on `MainMenuScene` keep the behaviour consistent, and the roster card was tightened from h=68/spacing=75 to h=60/spacing=66 so 10 fit comfortably above the pagination strip. `showScreen(screen, resetPage?)` and `showItemUseTarget(belt, resetPage?)` both take an optional flag so PREV/NEXT and party-toggle redraws don't snap back to page 1.

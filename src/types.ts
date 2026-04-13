@@ -82,6 +82,7 @@ export interface BattlePokemon {
   statusEffects: StatusType[];
   statBonuses: Stats; // permanent vitamin bonuses, persisted
   battleBoosts: StageBoosts; // temporary X item stages, reset per battle
+  isFavourite?: boolean; // starred in the roster UI, persisted
 }
 
 // --- Items ---

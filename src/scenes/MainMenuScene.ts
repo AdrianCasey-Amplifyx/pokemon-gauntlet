@@ -29,10 +29,15 @@ const GAME_H = 844;
 const PARTY_SIZE = 3;
 const LIST_PAGE_SIZE = 10;
 
+type RosterSort = "level" | "type" | "name";
+type ItemSort = "name" | "quantity";
+
 export class MainMenuScene extends Phaser.Scene {
   private gameState!: GameState;
   private selectedParty: number[] = [];
   private listPage = 0;
+  private rosterSort: RosterSort = "level";
+  private itemSort: ItemSort = "name";
 
   constructor() {
     super({ key: "MainMenuScene" });
@@ -192,18 +197,90 @@ export class MainMenuScene extends Phaser.Scene {
     backBg.on("pointerdown", () => this.buildUI());
   }
 
+  /**
+   * Roster sorted by the active sort mode, favourites always first.
+   * Produces a new array — safe to slice/paginate without mutating state.
+   */
+  private getSortedRoster(): BattlePokemon[] {
+    const compare = (a: BattlePokemon, b: BattlePokemon): number => {
+      switch (this.rosterSort) {
+        case "level":
+          return b.level - a.level || a.species.name.localeCompare(b.species.name);
+        case "name":
+          return a.species.name.localeCompare(b.species.name);
+        case "type":
+          return (
+            a.species.types[0].localeCompare(b.species.types[0]) ||
+            b.level - a.level
+          );
+      }
+    };
+    return [...this.gameState.roster].sort((a, b) => {
+      const favDiff = (a.isFavourite ? 0 : 1) - (b.isFavourite ? 0 : 1);
+      if (favDiff !== 0) return favDiff;
+      return compare(a, b);
+    });
+  }
+
+  private drawSortBar<T extends string>(
+    y: number,
+    labels: { value: T; label: string }[],
+    active: T,
+    onPick: (value: T) => void,
+  ): void {
+    this.add.text(20, y, "Sort:", {
+      fontSize: "10px", fontFamily: "monospace", color: "#8899aa",
+    }).setOrigin(0, 0.5);
+    const btnW = 62;
+    const gap = 6;
+    const totalW = labels.length * btnW + (labels.length - 1) * gap;
+    const startX = GAME_W - 20 - totalW + btnW / 2;
+    labels.forEach((entry, idx) => {
+      const x = startX + idx * (btnW + gap);
+      const isActive = entry.value === active;
+      const bg = this.add.rectangle(
+        x, y, btnW, 22,
+        isActive ? 0x4466aa : 0x1a1a2e,
+      ).setOrigin(0.5).setStrokeStyle(1, isActive ? 0x88aadd : 0x444466);
+      this.add.text(x, y, entry.label, {
+        fontSize: "10px", fontFamily: "monospace",
+        color: isActive ? "#ffffff" : "#8899aa",
+        fontStyle: "bold",
+      }).setOrigin(0.5);
+      bg.setInteractive();
+      bg.on("pointerdown", () => onPick(entry.value));
+    });
+  }
+
   // --- Roster ---
   private drawRoster(): void {
-    this.add.text(GAME_W / 2, 30, "YOUR POKEMON", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 24, "YOUR POKEMON", { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
 
-    this.clampListPage(this.gameState.roster.length);
-    const { slice } = this.pagedSlice(this.gameState.roster);
+    this.drawSortBar<RosterSort>(
+      52,
+      [
+        { value: "level", label: "LEVEL" },
+        { value: "type", label: "TYPE" },
+        { value: "name", label: "A-Z" },
+      ],
+      this.rosterSort,
+      (value) => {
+        if (value === this.rosterSort) return;
+        this.rosterSort = value;
+        this.listPage = 0;
+        this.showScreen("roster", false);
+      },
+    );
+
+    const sorted = this.getSortedRoster();
+    this.clampListPage(sorted.length);
+    const { slice } = this.pagedSlice(sorted);
 
     slice.forEach((pokemon, localIdx) => {
-      const y = 60 + localIdx * 66;
+      const y = 74 + localIdx * 64;
       const x = 20;
       const w = GAME_W - 40;
-      const h = 60;
+      const h = 58;
 
       this.add.rectangle(x + w / 2, y + h / 2, w, h, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
 
@@ -212,12 +289,27 @@ export class MainMenuScene extends Phaser.Scene {
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(x + 52, y + 5, pokemon.species.name, { fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" });
-      this.add.text(x + w - 5, y + 5, `Lv${pokemon.level}`, { fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(1, 0);
+      this.add.text(x + 52, y + 4, pokemon.species.name, { fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" });
+      this.add.text(x + w - 28, y + 4, `Lv${pokemon.level}`, { fontSize: "11px", fontFamily: "monospace", color: "#aaaaaa" }).setOrigin(1, 0);
+
+      // Favourite star — tappable, persists to save
+      const starHit = this.add.rectangle(x + w - 11, y + 13, 22, 22, 0x000000, 0)
+        .setOrigin(0.5)
+        .setInteractive();
+      this.add.text(x + w - 11, y + 13, pokemon.isFavourite ? "★" : "☆", {
+        fontSize: "18px", fontFamily: "monospace",
+        color: pokemon.isFavourite ? "#ffcc33" : "#666677",
+        fontStyle: "bold",
+      }).setOrigin(0.5);
+      starHit.on("pointerdown", () => {
+        pokemon.isFavourite = !pokemon.isFavourite;
+        saveGame(this.gameState);
+        this.showScreen("roster", false);
+      });
 
       // HP bar
       const barX = x + 52;
-      const barY = y + 24;
+      const barY = y + 23;
       const barW = w - 65;
       this.add.rectangle(barX + barW / 2, barY + 3, barW, 6, 0x333333).setOrigin(0.5);
       const hpPct = pokemon.currentHP / pokemon.maxHP;
@@ -239,12 +331,12 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(x + w - 5, xpBarY + 7, typeStr, { fontSize: "7px", fontFamily: "monospace", color: "#555577" }).setOrigin(1, 0);
     });
 
-    this.drawPagination(this.gameState.roster.length, () => this.showScreen("roster", false));
+    this.drawPagination(sorted.length, () => this.showScreen("roster", false));
   }
 
   // --- Items view ---
   private drawItems(): void {
-    this.add.text(GAME_W / 2, 30, "YOUR ITEMS", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 24, "YOUR ITEMS", { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
 
     const items = this.gameState.playerItems.filter((b) => b.quantity > 0);
     const eggs = this.gameState.eggs;
@@ -253,6 +345,20 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(GAME_W / 2, 200, "No items!\nVisit the PokeMart to buy some.", { fontSize: "14px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
       return;
     }
+
+    this.drawSortBar<ItemSort>(
+      52,
+      [
+        { value: "name", label: "A-Z" },
+        { value: "quantity", label: "QTY" },
+      ],
+      this.itemSort,
+      (value) => {
+        if (value === this.itemSort) return;
+        this.itemSort = value;
+        this.showScreen("items", false);
+      },
+    );
 
     // Group by category so sections are obvious
     const categoryOrder: ItemCategory[] = ["medicine", "battle", "vitamin", "stone", "candy", "tm", "field"];
@@ -271,8 +377,13 @@ export class MainMenuScene extends Phaser.Scene {
       if (!grouped.has(cat)) grouped.set(cat, []);
       grouped.get(cat)!.push(belt);
     }
+    // Sort within each category by the active mode
+    const sortFn = this.itemSort === "name"
+      ? (a: BattleItem, b: BattleItem) => a.item.name.localeCompare(b.item.name)
+      : (a: BattleItem, b: BattleItem) => b.quantity - a.quantity || a.item.name.localeCompare(b.item.name);
+    for (const list of grouped.values()) list.sort(sortFn);
 
-    let y = 72;
+    let y = 80;
     for (const cat of categoryOrder) {
       const list = grouped.get(cat);
       if (!list || list.length === 0) continue;
