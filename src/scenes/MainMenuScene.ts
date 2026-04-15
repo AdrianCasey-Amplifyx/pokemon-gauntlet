@@ -1203,23 +1203,26 @@ export class MainMenuScene extends Phaser.Scene {
 
   // --- Party Select ---
   private drawPartySelect(): void {
-    this.add.text(GAME_W / 2, 22, "SELECT PARTY", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 44, `${this.selectedParty.length}/${PARTY_SIZE} selected — tap to toggle`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 24, "SELECT PARTY", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 46, `${this.selectedParty.length}/${PARTY_SIZE} selected — tap to toggle`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
 
-    // Selected preview
+    // Selected preview — reserve the strip at y=72 even when empty so the
+    // sort bar below sits in a stable position whether or not a party is picked.
     if (this.selectedParty.length > 0) {
       this.selectedParty.forEach((idx, i) => {
         const p = this.gameState.roster[idx];
         const x = GAME_W / 2 - (this.selectedParty.length - 1) * 25 + i * 50;
         if (this.textures.exists(p.species.spriteKey)) {
-          const img = this.add.image(x, 70, p.species.spriteKey).setDisplaySize(32, 32).setOrigin(0.5);
+          const img = this.add.image(x, 72, p.species.spriteKey).setDisplaySize(32, 32).setOrigin(0.5);
           img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
       });
     }
 
+    // Sort bar lives below the preview strip (preview sprites extend ~56..88,
+    // sort bar buttons are 22px tall so centered at 104 → 93..115).
     this.drawSortBar<RosterSort>(
-      96,
+      104,
       [
         { value: "level", label: "LEVEL" },
         { value: "type", label: "TYPE" },
@@ -1238,9 +1241,10 @@ export class MainMenuScene extends Phaser.Scene {
     this.clampListPage(sorted.length);
     const { slice } = this.pagedSlice(sorted);
 
+    // First card centered at 140 (top = 117) clears the sort bar's bottom at 115.
     slice.forEach((pokemon, localIdx) => {
       const i = this.gameState.roster.indexOf(pokemon);
-      const y = 120 + localIdx * 55;
+      const y = 140 + localIdx * 54;
       const isSelected = this.selectedParty.includes(i);
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 46, isSelected ? 0x334422 : 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(2, isSelected ? 0x44aa22 : 0x444466);
