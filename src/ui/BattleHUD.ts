@@ -436,6 +436,7 @@ export class BattleHUD {
     this.swapOverlay = this.scene.add.container(0, 0).setDepth(150);
 
     const bg = this.scene.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5);
+    bg.setInteractive();
     this.swapOverlay.add(bg);
 
     const title = this.scene.add
@@ -530,6 +531,7 @@ export class BattleHUD {
 
     this.itemOverlay = this.scene.add.container(0, 0).setDepth(150);
     const bg = this.scene.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5);
+    bg.setInteractive();
     this.itemOverlay.add(bg);
 
     const title = this.scene.add
@@ -621,6 +623,7 @@ export class BattleHUD {
   private showItemTargetPanel(itemIndex: number): void {
     this.itemTargetOverlay = this.scene.add.container(0, 0).setDepth(150);
     const bg = this.scene.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5);
+    bg.setInteractive();
     this.itemTargetOverlay.add(bg);
 
     const belt = this.playerItems[itemIndex];
