@@ -235,7 +235,7 @@ Tiles track `{ type, revealed, visited, encounterChance, goldDrop, exitDirection
 | **Items** | View inventory |
 | **PokeMart** | Buy items (gated by world progress — see §6) |
 | **PokeCenter** | Heal entire roster to full HP + clear statuses for **20 gold** |
-| **Pokemon Trader** | Buy species you've seen in the wild or sell roster Pokemon for half the current buy price (see §6.2) |
+| **Pokemon Trader** | Buy any species you've seen in the wild (duplicates allowed) or sell roster Pokemon for half the current buy price (see §6.2) |
 | **Eggs** | Buy eggs of three tiers; active eggs hatch after N dungeon steps |
 | **Adventure** | Enter the active world's next room |
 
@@ -349,7 +349,7 @@ Items are world-gated so that the store grows as the player progresses. The Poke
 
 Accessed via the **POKEMON TRADER** button on the town hub, with two tabs:
 
-**Buy** — purchase any Pokemon species the player has **seen** in battle (tracked as `seenPokemon: Record<string, number>` in `GameState`, speciesId → highest level ever encountered) and does not currently own. Cost formula:
+**Buy** — purchase any Pokemon species the player has **seen** in battle (tracked as `seenPokemon: Record<string, number>` in `GameState`, speciesId → highest level ever encountered). Duplicates are allowed — if you own a low-level Geodude but later spot a Lv22 one in world 3, that higher-level Geodude is for sale at its world-3 level and price. Cost formula:
 
 ```
 baseCost = floor((BST / 3 + 30) * rarityMultiplier)

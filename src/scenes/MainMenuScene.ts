@@ -983,10 +983,10 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private drawPokemonBuyList(): void {
-    const available = getAvailableShopPokemon(this.gameState.seenPokemon, this.gameState.roster);
+    const available = getAvailableShopPokemon(this.gameState.seenPokemon);
 
     if (available.length === 0) {
-      this.add.text(GAME_W / 2, 300, "No new Pokemon\navailable yet!\n\nFight wild Pokemon to\nunlock them in the shop.", { fontSize: "13px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
+      this.add.text(GAME_W / 2, 300, "No Pokemon available\nyet!\n\nFight wild Pokemon to\nunlock them in the shop.", { fontSize: "13px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
       return;
     }
 

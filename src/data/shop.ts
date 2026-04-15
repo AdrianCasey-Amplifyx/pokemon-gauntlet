@@ -86,19 +86,16 @@ export const SHOP_ITEMS_SCALED: (ShopItem & { worldRequired: number })[] = [
 ];
 
 /**
- * Get Pokemon available in shop — must have been SEEN in battle and not
- * already owned. Each entry is sold at the highest level the player has
- * encountered that species at (minimum `SHOP_POKEMON_MIN_LEVEL`), and the
- * cost scales accordingly.
+ * Get Pokemon available in shop — any species the player has SEEN in battle
+ * is for sale, even if they already own one. Each entry is sold at the
+ * highest level the player has encountered that species at (minimum
+ * `SHOP_POKEMON_MIN_LEVEL`), and the cost scales accordingly.
  */
 export function getAvailableShopPokemon(
-  seenPokemon: Record<string, number>,
-  roster: BattlePokemon[]
+  seenPokemon: Record<string, number>
 ): ShopPokemon[] {
-  const owned = new Set(roster.map((r) => r.species.id));
   const entries: ShopPokemon[] = [];
   for (const [id, seenLevel] of Object.entries(seenPokemon)) {
-    if (owned.has(id)) continue;
     try {
       const species = getPokemon(id);
       const level = Math.max(seenLevel, SHOP_POKEMON_MIN_LEVEL);
