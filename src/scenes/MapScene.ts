@@ -430,6 +430,9 @@ export class MapScene extends Phaser.Scene {
     if (level > prevSeen) {
       this.gameState.seenPokemon[species.id] = level;
     }
+    if (!this.gameState.caughtPokemon.includes(species.id)) {
+      this.gameState.caughtPokemon.push(species.id);
+    }
     this.gameState.eggs = this.gameState.eggs.filter((e) => e.id !== hatched.id);
     saveGame(this.gameState);
 

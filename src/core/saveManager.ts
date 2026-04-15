@@ -44,6 +44,13 @@ interface SaveData {
    * so existing shop entries still work.
    */
   seenPokemon: Record<string, number> | string[];
+  /**
+   * speciesIds the player has ever owned (starter / purchased / hatched).
+   * Persistent Pokedex flag — stays set even after selling the Pokemon.
+   * Optional for backwards compatibility; missing saves are inferred from
+   * the current roster at load time.
+   */
+  caughtPokemon?: string[];
   worlds: WorldProgress[];
   activeWorld: number;
   eggs?: EggInstance[];
@@ -106,7 +113,7 @@ export function getActiveSlot(): number {
 
 export function saveGame(state: GameState): void {
   const data: SaveData = {
-    version: 2,
+    version: 3,
     roster: state.roster.map(serializePokemon),
     partyIndices: state.playerParty.map((p) =>
       state.roster.indexOf(p)
@@ -116,6 +123,7 @@ export function saveGame(state: GameState): void {
       .map((b) => ({ itemId: b.item.id, quantity: b.quantity })),
     gold: state.gold,
     seenPokemon: state.seenPokemon,
+    caughtPokemon: state.caughtPokemon,
     worlds: state.worlds,
     activeWorld: state.activeWorld,
     eggs: state.eggs,
@@ -178,12 +186,20 @@ function buildGameState(data: SaveData): GameState {
     activeWorld = activeWorld + 1;
   }
 
+  // Back-fill caughtPokemon for legacy saves: at minimum, every species
+  // currently in the roster has to have been "caught" to be there.
+  const caughtPokemon = data.caughtPokemon ? [...data.caughtPokemon] : [];
+  for (const p of roster) {
+    if (!caughtPokemon.includes(p.species.id)) caughtPokemon.push(p.species.id);
+  }
+
   return {
     roster,
     playerParty,
     playerItems,
     gold: data.gold,
     seenPokemon: migrateSeenPokemon(data.seenPokemon),
+    caughtPokemon,
     worlds,
     activeWorld,
     currentMap: null,
@@ -332,6 +348,7 @@ export function createTestGameState(): GameState {
       rattata: 8, caterpie: 5, weedle: 5,
       geodude: 14, zubat: 12, clefairy: 18,
     },
+    caughtPokemon: roster.map((p) => p.species.id),
     worlds,
     activeWorld: 0,
     currentMap: null,

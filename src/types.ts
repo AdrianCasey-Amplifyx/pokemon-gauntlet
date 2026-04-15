@@ -276,6 +276,7 @@ export interface GameState {
   playerItems: BattleItem[];
   gold: number;
   seenPokemon: Record<string, number>; // speciesId -> highest level ever encountered (unlocks shop + sets buy level)
+  caughtPokemon: string[];              // speciesIds the player has ever owned — persistent Pokedex flag (survives selling)
   worlds: WorldProgress[];
   activeWorld: number;
   currentMap: DungeonMap | null;

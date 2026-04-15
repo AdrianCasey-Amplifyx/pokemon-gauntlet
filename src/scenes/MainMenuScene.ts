@@ -3,7 +3,8 @@ import type { BattleItem, BattlePokemon, GameState, EggTier, ItemCategory } from
 import { createBattlePokemon, evolveIntoSpecies, xpToNextLevel } from "../core/statCalc.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { ITEMS, applyItem, getTMMove, VITAMIN_CONFIG } from "../data/items.ts";
-import { getPokemon } from "../data/pokemon.ts";
+import { getPokemon, getAllPokemon } from "../data/pokemon.ts";
+import { POKEDEX_ENTRIES } from "../data/pokedexEntries.ts";
 import { getStoneEvolution } from "../data/stoneEvolutions.ts";
 import {
   getAvailableShopPokemon,
@@ -122,18 +123,20 @@ export class MainMenuScene extends Phaser.Scene {
       this.add.text(GAME_W / 2, itemsY, "No items", { fontSize: "10px", fontFamily: "monospace", color: "#666666" }).setOrigin(0.5);
     }
 
-    // Main buttons
+    // Main buttons — 9 entries fit comfortably between the status block at the top
+    // and the TITLE SCREEN back button at the bottom (btn extents 180..556, back at 804).
     const btnY = 180;
     const gap = 44;
 
     this.makeBtn(GAME_W / 2, btnY, "POKEMON", "View your roster", 0x335588, () => this.showScreen("roster"));
-    this.makeBtn(GAME_W / 2, btnY + gap, "ITEMS", "View & use your items", 0x886633, () => this.showScreen("items"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 2, "POKECENTER", "Heal all Pokemon — 20g", 0xcc3333, () => this.usePokeCenter());
-    this.makeBtn(GAME_W / 2, btnY + gap * 3, "TRAIN", "Learn & manage moves", 0x884488, () => this.showScreen("train"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 4, "POKEMART", "Buy items with gold", 0x885533, () => this.showScreen("shop"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 5, "POKEMON TRADER", "Buy new Pokemon or sell excess", 0x553388, () => this.showScreen("pokeshop"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 6, "EGG SHOP", "Buy & hatch Pokemon eggs", 0xaa8833, () => this.showScreen("eggshop"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 7, "ADVENTURE", "Select party & explore!", 0x338855, () => this.showScreen("party"));
+    this.makeBtn(GAME_W / 2, btnY + gap, "POKEDEX", "Seen & caught Pokemon", 0x226677, () => this.showScreen("pokedex"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 2, "ITEMS", "View & use your items", 0x886633, () => this.showScreen("items"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 3, "POKECENTER", "Heal all Pokemon — 20g", 0xcc3333, () => this.usePokeCenter());
+    this.makeBtn(GAME_W / 2, btnY + gap * 4, "TRAIN", "Learn & manage moves", 0x884488, () => this.showScreen("train"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 5, "POKEMART", "Buy items with gold", 0x885533, () => this.showScreen("shop"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 6, "POKEMON TRADER", "Buy new Pokemon or sell excess", 0x553388, () => this.showScreen("pokeshop"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 7, "EGG SHOP", "Buy & hatch Pokemon eggs", 0xaa8833, () => this.showScreen("eggshop"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 8, "ADVENTURE", "Select party & explore!", 0x338855, () => this.showScreen("party"));
 
     // Title screen button
     const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 40, 160, 34, 0x333333).setOrigin(0.5).setStrokeStyle(1, 0x555555);
@@ -175,7 +178,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private showScreen(
-    screen: "roster" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train",
+    screen: "roster" | "pokedex" | "items" | "shop" | "pokeshop" | "eggshop" | "party" | "train",
     resetPage = true,
   ): void {
     if (resetPage) this.listPage = 0;
@@ -186,6 +189,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     switch (screen) {
       case "roster": this.drawRoster(); break;
+      case "pokedex": this.drawPokedex(); break;
       case "items": this.drawItems(); break;
       case "shop": this.drawShop(); break;
       case "pokeshop": this.drawPokemonShop(); break;
@@ -336,6 +340,108 @@ export class MainMenuScene extends Phaser.Scene {
     });
 
     this.drawPagination(sorted.length, () => this.showScreen("roster", false));
+  }
+
+  // --- Pokedex ---
+  private drawPokedex(): void {
+    this.add.text(GAME_W / 2, 22, "POKEDEX", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+
+    const all = getAllPokemon();
+    const seen = this.gameState.seenPokemon;
+    const caught = new Set(this.gameState.caughtPokemon);
+    const seenCount = all.filter((s) => seen[s.id] !== undefined || caught.has(s.id)).length;
+    const caughtCount = all.filter((s) => caught.has(s.id)).length;
+
+    this.add.text(GAME_W / 2, 46, `Seen ${seenCount}/${all.length}   Caught ${caughtCount}/${all.length}`, {
+      fontSize: "11px", fontFamily: "monospace", color: "#88aacc",
+    }).setOrigin(0.5);
+
+    this.clampListPage(all.length);
+    const { slice, start } = this.pagedSlice(all);
+
+    slice.forEach((species, localIdx) => {
+      const dexNum = start + localIdx + 1;
+      const y = 72 + localIdx * 66;
+      const w = GAME_W - 40;
+      const h = 60;
+      const x = 20;
+
+      const isCaught = caught.has(species.id);
+      const isSeen = isCaught || seen[species.id] !== undefined;
+
+      const cardColor = isCaught ? 0x1a2a22 : isSeen ? 0x1a1a2e : 0x14141a;
+      const strokeColor = isCaught ? 0x44aa66 : isSeen ? 0x44557a : 0x2a2a33;
+      this.add.rectangle(x + w / 2, y + h / 2, w, h, cardColor).setOrigin(0.5).setStrokeStyle(1, strokeColor);
+
+      // Dex number on the left
+      this.add.text(x + 10, y + 8, `#${dexNum.toString().padStart(3, "0")}`, {
+        fontSize: "10px", fontFamily: "monospace", color: "#667788", fontStyle: "bold",
+      });
+
+      // Sprite (or silhouette for unseen)
+      const spriteX = x + 30;
+      const spriteY = y + h / 2 + 4;
+      if (isSeen && this.textures.exists(species.spriteKey)) {
+        const img = this.add.image(spriteX, spriteY, species.spriteKey).setDisplaySize(38, 38).setOrigin(0.5);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        if (!isCaught) img.setTint(0x6688aa);
+      } else {
+        // Unseen placeholder — a dim `?` box
+        this.add.rectangle(spriteX, spriteY, 38, 38, 0x1f1f2a).setOrigin(0.5).setStrokeStyle(1, 0x333344);
+        this.add.text(spriteX, spriteY, "?", {
+          fontSize: "22px", fontFamily: "monospace", color: "#444455", fontStyle: "bold",
+        }).setOrigin(0.5);
+      }
+
+      // Name
+      const nameX = x + 58;
+      const displayName = isSeen ? species.name : "???";
+      this.add.text(nameX, y + 8, displayName, {
+        fontSize: "13px", fontFamily: "monospace",
+        color: isCaught ? "#ffffff" : isSeen ? "#cccccc" : "#555566",
+        fontStyle: "bold",
+      });
+
+      // Caught badge — right-aligned on the first line
+      if (isCaught) {
+        this.add.text(x + w - 8, y + 10, "✓ CAUGHT", {
+          fontSize: "9px", fontFamily: "monospace", color: "#66dd88", fontStyle: "bold",
+        }).setOrigin(1, 0);
+      } else if (isSeen) {
+        this.add.text(x + w - 8, y + 10, "SEEN", {
+          fontSize: "9px", fontFamily: "monospace", color: "#8899aa", fontStyle: "bold",
+        }).setOrigin(1, 0);
+      }
+
+      if (isCaught) {
+        // Types + rarity on the middle line
+        const typeStr = species.types.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join(" / ");
+        const rarityLabel = species.rarity.charAt(0).toUpperCase() + species.rarity.slice(1);
+        this.add.text(nameX, y + 24, `${typeStr}  ·  ${rarityLabel}`, {
+          fontSize: "9px", fontFamily: "monospace", color: "#aaccee",
+        });
+
+        // Description — wrap inside the remaining card width
+        const desc = POKEDEX_ENTRIES[species.id] ?? "";
+        if (desc) {
+          this.add.text(nameX, y + 37, desc, {
+            fontSize: "8px", fontFamily: "monospace", color: "#889aaa",
+            wordWrap: { width: w - (nameX - x) - 10 },
+          });
+        }
+      } else if (isSeen) {
+        // Seen-only cards show a hint that more unlocks on capture.
+        this.add.text(nameX, y + 28, "Catch this Pokemon to reveal its details.", {
+          fontSize: "9px", fontFamily: "monospace", color: "#667788", fontStyle: "italic",
+        });
+      } else {
+        this.add.text(nameX, y + 28, "Not yet encountered.", {
+          fontSize: "9px", fontFamily: "monospace", color: "#444455", fontStyle: "italic",
+        });
+      }
+    });
+
+    this.drawPagination(all.length, () => this.showScreen("pokedex", false));
   }
 
   // --- Items view ---
@@ -893,6 +999,9 @@ export class MainMenuScene extends Phaser.Scene {
         cardBg.on("pointerdown", () => {
           this.gameState.gold -= shopPoke.cost;
           this.gameState.roster.push(createBattlePokemon(species, shopPoke.level));
+          if (!this.gameState.caughtPokemon.includes(species.id)) {
+            this.gameState.caughtPokemon.push(species.id);
+          }
           saveGame(this.gameState);
           this.showScreen("pokeshop", false);
           this.showToast(`${species.name} (Lv${shopPoke.level}) joined your roster!  -${shopPoke.cost}g`, { sfx: "purchase" });

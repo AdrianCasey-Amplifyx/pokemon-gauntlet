@@ -231,10 +231,11 @@ Tiles track `{ type, revealed, visited, encounterChance, goldDrop, exitDirection
 | Option | Function |
 |---|---|
 | **Pokemon** | View roster, inspect stats/moves, select the 3-Pokemon adventure party |
+| **Pokedex** | Paginated catalogue of all 151 species with seen/caught reveal states (see §5.1.2) |
 | **Items** | View inventory |
 | **PokeMart** | Buy items (gated by world progress — see §6) |
 | **PokeCenter** | Heal entire roster to full HP + clear statuses for **20 gold** |
-| **Buy Pokemon** | Purchase Pokemon that have been **seen in battle** (not yet owned) |
+| **Pokemon Trader** | Buy species you've seen in the wild or sell roster Pokemon for half the current buy price (see §6.2) |
 | **Eggs** | Buy eggs of three tiers; active eggs hatch after N dungeon steps |
 | **Adventure** | Enter the active world's next room |
 
@@ -249,6 +250,22 @@ Secondary menus accessed from **Pokemon**:
 - **Roster sort** — the Pokemon screen has a `LEVEL` (default, high → low) / `TYPE` (alphabetical by primary type) / `A-Z` toggle at the top. Favourites (see below) always pin to the top within the active sort.
 - **Favourites** — every roster card has a tappable ☆/★ star at its top-right corner. Tapping toggles `BattlePokemon.isFavourite`, which persists via an optional `fav` field on the saved pokemon record. Old saves load with everyone unstarred.
 - **Items sort** — the Items screen has an `A-Z` (default) / `QTY` (high → low) toggle that re-orders entries *within* each category section (Medicine, Battle, Vitamins, Stones, Candy, TMs, Field) while preserving the category grouping.
+
+### 5.1.2 Pokedex
+
+A paginated catalogue of all 151 Gen 1 species accessed from the **Pokedex** button on the town hub. 10 entries per page in national-dex order, with three reveal tiers per slot:
+
+| State | Trigger | Card content |
+|---|---|---|
+| **Unseen** | Never encountered in battle | Dim `?` tile, name shown as `???`, hint "Not yet encountered." |
+| **Seen** | Encountered in battle (or hatched) but never owned | Tinted sprite + real name with `SEEN` badge; hint "Catch this Pokemon to reveal its details." No type/rarity/description. |
+| **Caught** | Has been in the roster at least once (starter, purchased, hatched) | Full-color sprite + name with `✓ CAUGHT` badge, types, rarity label, and one-sentence flavor description from `src/data/pokedexEntries.ts`. |
+
+State is tracked via two `GameState` fields:
+- `seenPokemon: Record<speciesId, highestLevel>` — set when the player encounters a species in battle or hatches one.
+- `caughtPokemon: string[]` — set once per species the moment it first joins the roster (starter, pokeshop purchase, egg hatch). **Persistent** — selling a Pokemon does not revoke its dex entry.
+
+Header shows running totals `Seen X/151   Caught Y/151`.
 
 ---
 
@@ -491,7 +508,9 @@ MapTile {
 
 GameState {
   roster[], playerParty[], playerItems[], gold,
-  seenPokemon: { speciesId: highestLevel }, worlds[], activeWorld,
+  seenPokemon: { speciesId: highestLevel },
+  caughtPokemon: string[],  // persistent Pokedex flag — stays set after selling
+  worlds[], activeWorld,
   currentMap, playerX, playerY,
   repelSteps, eggs[]
 }
@@ -520,10 +539,11 @@ cost = floor((evolvedSpeciesBST / 4 + 20) * rarityMultiplier)
 
 Evolving swaps the species reference and recalculates stats; moves and current HP are preserved.
 
-### 9.3 Seen vs Owned
+### 9.3 Seen, Caught, and Owned
 
-- **Seen** (`seenPokemon`): `Record<speciesId, highestLevelEncountered>`. Species encountered in battle at least once. Drives **Buy Pokemon** availability and the level/price the species is sold at.
-- **Owned** (`roster`): species purchased, hatched, or the starter. Only owned Pokemon can be placed in `playerParty`.
+- **Seen** (`seenPokemon`): `Record<speciesId, highestLevelEncountered>`. Species encountered in battle at least once (or hatched). Drives **Pokemon Trader** availability and the level/price the species is sold at, and unlocks the sprite + name reveal on the Pokedex.
+- **Caught** (`caughtPokemon`): `string[]` of speciesIds that have ever been in the roster (starter, purchased, hatched). Persistent — selling a Pokemon does not revoke its caught status. Drives the full description/type/rarity reveal on the Pokedex.
+- **Owned** (`roster`): species currently in the roster. Only owned Pokemon can be placed in `playerParty`.
 
 ### 9.4 Party Selection
 
