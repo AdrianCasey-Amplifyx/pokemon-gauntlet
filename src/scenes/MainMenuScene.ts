@@ -75,6 +75,13 @@ export class MainMenuScene extends Phaser.Scene {
   private buildUI(): void {
     this.children.removeAll(true);
 
+    // Fresh top-most interactive backdrop — absorbs any empty-space
+    // click so a stale input registration from a destroyed button on
+    // the previous screen can't fire.
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
+
     // Title
     this.add.text(GAME_W / 2, 30, "POKEMON GAUNTLET", {
       fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
@@ -184,8 +191,16 @@ export class MainMenuScene extends Phaser.Scene {
     if (resetPage) this.listPage = 0;
     this.children.removeAll(true);
 
-    // Dark background
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    // Dark background — `setInteractive()` so it absorbs any empty-space
+    // click. `removeAll(true)` destroys the old buttons, but Phaser's
+    // input plugin can hold a stale reference to a destroyed interactive
+    // for a frame, so without a fresh top-most interactive backdrop a
+    // tap on a non-interactive screen element (e.g. a Pokedex card) can
+    // leak through to whatever button was underneath it on the menu
+    // before.
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
 
     switch (screen) {
       case "roster": this.drawRoster(); break;
@@ -718,7 +733,9 @@ export class MainMenuScene extends Phaser.Scene {
   private showItemUseTarget(belt: BattleItem, resetPage = true): void {
     if (resetPage) this.listPage = 0;
     this.children.removeAll(true);
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
 
     const icon = this.getItemIcon(belt.item.id);
     this.add.text(GAME_W / 2, 30, `${icon} Use ${belt.item.name} on?`, { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
@@ -801,7 +818,9 @@ export class MainMenuScene extends Phaser.Scene {
   /** Shared evolution animation used by level evolution and stone evolution. */
   private showEvolutionAnimation(oldName: string, pokemon: BattlePokemon, onContinue: () => void): void {
     this.children.removeAll(true);
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
     MusicManager.playSFX("hatch");
 
     this.add.text(GAME_W / 2, GAME_H / 2 - 100, "Congratulations!", {
@@ -1333,7 +1352,9 @@ export class MainMenuScene extends Phaser.Scene {
   // --- Training: Move management for a specific Pokemon ---
   private drawTrainMoves(rosterIndex: number): void {
     this.children.removeAll(true);
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
 
     const pokemon = this.gameState.roster[rosterIndex];
     const trainable = getTrainableMoves(pokemon);
@@ -1556,7 +1577,9 @@ export class MainMenuScene extends Phaser.Scene {
 
   private showTMForgetPicker(rosterIndex: number, belt: BattleItem, newMove: ReturnType<typeof getMove>): void {
     this.children.removeAll(true);
-    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a).setOrigin(0.5);
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
 
     const pokemon = this.gameState.roster[rosterIndex];
 
