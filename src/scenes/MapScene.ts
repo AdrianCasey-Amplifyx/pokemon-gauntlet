@@ -87,6 +87,15 @@ export class MapScene extends Phaser.Scene {
   }
 
   private buildMapUI(): void {
+    // Force-disable input on every child before destroying so the
+    // Phaser input plugin drops them synchronously — otherwise a
+    // destroyed button can linger in the hit-test list for a frame
+    // and leak taps to the next screen. Same rationale as
+    // MainMenuScene.resetScreen.
+    this.children.each((child) => {
+      const go = child as Phaser.GameObjects.GameObject;
+      if (go.input) go.disableInteractive();
+    });
     this.children.removeAll(true);
     this.tileRects = [];
     this.fogRects = [];

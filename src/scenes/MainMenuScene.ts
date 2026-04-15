@@ -72,8 +72,34 @@ export class MainMenuScene extends Phaser.Scene {
     this.buildUI();
   }
 
-  private buildUI(): void {
+  /**
+   * Clears the scene in preparation for drawing a new screen.
+   *
+   * Phaser 3's input plugin has a one-tick lag when it cleans up
+   * destroyed interactive GameObjects — they linger in the hit-test
+   * list for a frame, so the next pointerdown can still fire an old
+   * button's handler even though its GameObject has been destroyed.
+   * That's why the BACK button (destroyed by this.children.removeAll)
+   * could still register clicks on the freshly-drawn town screen,
+   * leaking taps into whatever previous-screen button sat at that
+   * position.
+   *
+   * Explicitly calling disableInteractive() on every child first
+   * forces immediate removal from the input plugin before destroy,
+   * which is synchronous and race-free. Every screen rebuild in this
+   * scene must go through this helper instead of calling removeAll
+   * directly.
+   */
+  private resetScreen(): void {
+    this.children.each((child) => {
+      const go = child as Phaser.GameObjects.GameObject;
+      if (go.input) go.disableInteractive();
+    });
     this.children.removeAll(true);
+  }
+
+  private buildUI(): void {
+    this.resetScreen();
 
     // Fresh top-most interactive backdrop — absorbs any empty-space
     // click so a stale input registration from a destroyed button on
@@ -189,15 +215,10 @@ export class MainMenuScene extends Phaser.Scene {
     resetPage = true,
   ): void {
     if (resetPage) this.listPage = 0;
-    this.children.removeAll(true);
+    this.resetScreen();
 
-    // Dark background — `setInteractive()` so it absorbs any empty-space
-    // click. `removeAll(true)` destroys the old buttons, but Phaser's
-    // input plugin can hold a stale reference to a destroyed interactive
-    // for a frame, so without a fresh top-most interactive backdrop a
-    // tap on a non-interactive screen element (e.g. a Pokedex card) can
-    // leak through to whatever button was underneath it on the menu
-    // before.
+    // Interactive backdrop — absorbs any empty-space click. See
+    // `resetScreen` for the full explanation of why this is required.
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
       .setOrigin(0.5)
       .setInteractive();
@@ -732,7 +753,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   private showItemUseTarget(belt: BattleItem, resetPage = true): void {
     if (resetPage) this.listPage = 0;
-    this.children.removeAll(true);
+    this.resetScreen();
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
       .setOrigin(0.5)
       .setInteractive();
@@ -817,7 +838,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   /** Shared evolution animation used by level evolution and stone evolution. */
   private showEvolutionAnimation(oldName: string, pokemon: BattlePokemon, onContinue: () => void): void {
-    this.children.removeAll(true);
+    this.resetScreen();
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
       .setOrigin(0.5)
       .setInteractive();
@@ -1351,7 +1372,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   // --- Training: Move management for a specific Pokemon ---
   private drawTrainMoves(rosterIndex: number): void {
-    this.children.removeAll(true);
+    this.resetScreen();
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
       .setOrigin(0.5)
       .setInteractive();
@@ -1576,7 +1597,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private showTMForgetPicker(rosterIndex: number, belt: BattleItem, newMove: ReturnType<typeof getMove>): void {
-    this.children.removeAll(true);
+    this.resetScreen();
     this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
       .setOrigin(0.5)
       .setInteractive();
