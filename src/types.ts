@@ -275,7 +275,7 @@ export interface GameState {
   playerParty: BattlePokemon[];
   playerItems: BattleItem[];
   gold: number;
-  seenPokemon: string[];  // species IDs seen in battle — unlocks them in shop
+  seenPokemon: Record<string, number>; // speciesId -> highest level ever encountered (unlocks shop + sets buy level)
   worlds: WorldProgress[];
   activeWorld: number;
   currentMap: DungeonMap | null;
@@ -290,6 +290,7 @@ export interface GameState {
 export interface ShopPokemon {
   speciesId: string;
   cost: number;
+  level: number;
 }
 
 export interface ShopItem {

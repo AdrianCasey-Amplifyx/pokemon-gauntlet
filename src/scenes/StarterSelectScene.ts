@@ -85,7 +85,7 @@ export class StarterSelectScene extends Phaser.Scene {
       playerParty: [],
       playerItems: createStarterBelt(),
       gold: 100,
-      seenPokemon: [],
+      seenPokemon: {},
       worlds,
       activeWorld: 0,
       currentMap: null,

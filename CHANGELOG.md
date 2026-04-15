@@ -2,6 +2,13 @@
 
 All notable game changes are recorded here. Newest entries at the top. See `CLAUDE.md` → *Changelog Policy* for the format and rules.
 
+## 2026-04-15
+
+- **ui:** **Adventure party picker now has sort filters** — the `SELECT PARTY` screen got the same `LEVEL / TYPE / A-Z` sort bar the Pokemon roster screen has, sharing the `rosterSort` state so you don't have to re-pick your preferred order twice. Favourites are still pinned to the top, and toggling a selection no longer resets the page. Each party card also now shows type codes alongside the level and stars favourited mons so you can eyeball coverage at a glance.
+- **shop:** **Buy Pokemon now sells at the highest level you've seen in the wild.** Previously every shop Pokemon was a flat level 5 regardless of how tough the wild version was; now `seenPokemon` tracks speciesId → highest-ever encountered level (replacing the old `string[]`), and `getPokemonPurchaseCost` scales base cost linearly from level 5 (lvl 5 = 1x, lvl 10 = 2x, lvl 20 = 4x). Saves with the legacy array shape migrate on load to a `Record<string, number>` defaulting every seen species to level 5. Touched `types.ts`, `StarterSelectScene`, `BattleScene`, `MapScene` (egg hatch), `saveManager`, `data/shop.ts`, `MainMenuScene.drawPokemonBuyList`.
+- **shop:** **Sell excess Pokemon for half the current buy price.** `POKEMON TRADER` (renamed from `BUY POKEMON`) now has a `BUY / SELL` tab switcher. The sell tab lists your roster with a `+Ng` sell value per card (`getPokemonSellValue` = purchase cost / 2, so it scales with level), blocks favourites to prevent accidents, hides the last Pokemon so you can't brick your save, and shows a confirm-sell overlay with the Pokemon's sprite before committing. Selling also clears any stale `selectedParty` indices so the adventure picker doesn't reference a removed mon.
+- **docs:** Added `TODO.md` with the active feature backlog (party picker filters, seen-level shop pricing, sell Pokemon) and ticked off the three items above.
+
 ## 2026-04-13
 
 - **bugfix:** **World progression got stuck at "Room 26/25" after clearing the final room of a world** — `MapScene.completeMap` incremented `world.currentMap` and unlocked the next world but never advanced `gameState.activeWorld`, so the town hub kept reading room `currentMap + 1 = 26` for the cleared world instead of room 1 of the next world. Now the final-room clear both unlocks and auto-advances `activeWorld` (when a next world exists), and the completion overlay reads `"Advancing to <next world name>!"`. `saveManager.buildGameState` also heals pre-fix saves on load by detecting `worlds[activeWorld].currentMap >= MAPS_PER_WORLD` and advancing, so anyone already stuck self-heals next session.

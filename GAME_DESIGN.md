@@ -328,16 +328,31 @@ Items are world-gated so that the store grows as the player progresses. The Poke
 | TM Thunder | Thunder (Electric, Pow 80, CD 3) | 1200 | World 4 |
 | TM Hyper Beam | Hyper Beam (Normal, Pow 85, CD 3) | 1500 | World 4 |
 
-### 6.2 Buy Pokemon
+### 6.2 Pokemon Trader (Buy & Sell)
 
-The player can purchase any Pokemon species they have **seen** in battle (tracked as `seenPokemon` in `GameState`) and do not currently own. Cost formula:
+Accessed via the **POKEMON TRADER** button on the town hub, with two tabs:
+
+**Buy** — purchase any Pokemon species the player has **seen** in battle (tracked as `seenPokemon: Record<string, number>` in `GameState`, speciesId → highest level ever encountered) and does not currently own. Cost formula:
 
 ```
-cost = floor((BST / 3 + 30) * rarityMultiplier)
-       rarityMult: common 1.0, uncommon 1.5, rare 3.0
+baseCost = floor((BST / 3 + 30) * rarityMultiplier)
+         rarityMult: common 1.0, uncommon 1.5, rare 3.0
+cost     = max(1, floor(baseCost * max(level, 5) / 5))
 ```
 
-Bought Pokemon join at **level 5** with auto-assigned level-appropriate moves.
+Bought Pokemon join at the **highest level the player has ever seen the species at** (minimum level 5) with auto-assigned level-appropriate moves. A freshly-seen level-5 Pidgey costs base; a Pidgeotto first seen at level 20 costs 4× base and joins at level 20.
+
+**Sell** — releases a roster Pokemon back to the trader for **half the current purchase cost** of that species at its current level:
+
+```
+sellValue = max(1, floor(buyCost(species, pokemon.level) / 2))
+```
+
+Rules:
+- Favourited Pokemon (★) are sell-locked — unstar them first if you really mean it.
+- The tab hides every card if you only have **one Pokemon left**, so selling can't brick the save.
+- A confirmation overlay (sprite + level + gold value + "This is permanent!") guards every sale.
+- Selling clears the current adventure party selection so stale roster indices can't reference a removed Pokemon.
 
 ### 6.3 Move Training
 
@@ -476,7 +491,7 @@ MapTile {
 
 GameState {
   roster[], playerParty[], playerItems[], gold,
-  seenPokemon[], worlds[], activeWorld,
+  seenPokemon: { speciesId: highestLevel }, worlds[], activeWorld,
   currentMap, playerX, playerY,
   repelSteps, eggs[]
 }
@@ -507,7 +522,7 @@ Evolving swaps the species reference and recalculates stats; moves and current H
 
 ### 9.3 Seen vs Owned
 
-- **Seen** (`seenPokemon`): species encountered in battle at least once. Drives **Buy Pokemon** availability.
+- **Seen** (`seenPokemon`): `Record<speciesId, highestLevelEncountered>`. Species encountered in battle at least once. Drives **Buy Pokemon** availability and the level/price the species is sold at.
 - **Owned** (`roster`): species purchased, hatched, or the starter. Only owned Pokemon can be placed in `playerParty`.
 
 ### 9.4 Party Selection

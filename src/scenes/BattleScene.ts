@@ -235,10 +235,14 @@ export class BattleScene extends Phaser.Scene {
     MusicManager.stop();
     this.hud.closeAllOverlays();
 
-    // Track seen Pokemon — unlocks them in the shop
-    for (const id of this.battleSM.seenSpeciesIds) {
-      if (!this.gameState.seenPokemon.includes(id)) {
-        this.gameState.seenPokemon.push(id);
+    // Track seen Pokemon — unlocks them in the shop at the highest level
+    // the player has ever encountered them at, so buying the species back is
+    // priced and levelled appropriately.
+    for (const enemy of this.battleSM.enemyParty) {
+      const id = enemy.species.id;
+      const prev = this.gameState.seenPokemon[id] ?? 0;
+      if (enemy.level > prev) {
+        this.gameState.seenPokemon[id] = enemy.level;
       }
     }
 

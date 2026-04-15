@@ -426,8 +426,9 @@ export class MapScene extends Phaser.Scene {
     const level = calculateHatchLevel(this.gameState.roster);
     const newPokemon = createBattlePokemon(species, level);
     this.gameState.roster.push(newPokemon);
-    if (!this.gameState.seenPokemon.includes(species.id)) {
-      this.gameState.seenPokemon.push(species.id);
+    const prevSeen = this.gameState.seenPokemon[species.id] ?? 0;
+    if (level > prevSeen) {
+      this.gameState.seenPokemon[species.id] = level;
     }
     this.gameState.eggs = this.gameState.eggs.filter((e) => e.id !== hatched.id);
     saveGame(this.gameState);

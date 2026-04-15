@@ -8,6 +8,7 @@ import { getStoneEvolution } from "../data/stoneEvolutions.ts";
 import {
   getAvailableShopPokemon,
   getAvailableShopItems,
+  getPokemonSellValue,
   getWorldsUnlocked,
   getTrainableMoves,
   getEvolutionInfo,
@@ -31,6 +32,7 @@ const LIST_PAGE_SIZE = 10;
 
 type RosterSort = "level" | "type" | "name";
 type ItemSort = "name" | "quantity";
+type PokeshopMode = "buy" | "sell";
 
 export class MainMenuScene extends Phaser.Scene {
   private gameState!: GameState;
@@ -38,6 +40,7 @@ export class MainMenuScene extends Phaser.Scene {
   private listPage = 0;
   private rosterSort: RosterSort = "level";
   private itemSort: ItemSort = "name";
+  private pokeshopMode: PokeshopMode = "buy";
 
   constructor() {
     super({ key: "MainMenuScene" });
@@ -45,6 +48,7 @@ export class MainMenuScene extends Phaser.Scene {
 
   create(): void {
     this.selectedParty = [];
+    this.pokeshopMode = "buy";
     MusicManager.play("map");
 
     this.gameState = this.registry.get("gameState") as GameState;
@@ -127,7 +131,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.makeBtn(GAME_W / 2, btnY + gap * 2, "POKECENTER", "Heal all Pokemon — 20g", 0xcc3333, () => this.usePokeCenter());
     this.makeBtn(GAME_W / 2, btnY + gap * 3, "TRAIN", "Learn & manage moves", 0x884488, () => this.showScreen("train"));
     this.makeBtn(GAME_W / 2, btnY + gap * 4, "POKEMART", "Buy items with gold", 0x885533, () => this.showScreen("shop"));
-    this.makeBtn(GAME_W / 2, btnY + gap * 5, "BUY POKEMON", "Expand your roster", 0x553388, () => this.showScreen("pokeshop"));
+    this.makeBtn(GAME_W / 2, btnY + gap * 5, "POKEMON TRADER", "Buy new Pokemon or sell excess", 0x553388, () => this.showScreen("pokeshop"));
     this.makeBtn(GAME_W / 2, btnY + gap * 6, "EGG SHOP", "Buy & hatch Pokemon eggs", 0xaa8833, () => this.showScreen("eggshop"));
     this.makeBtn(GAME_W / 2, btnY + gap * 7, "ADVENTURE", "Select party & explore!", 0x338855, () => this.showScreen("party"));
 
@@ -815,46 +819,214 @@ export class MainMenuScene extends Phaser.Scene {
     }
   }
 
-  // --- Pokemon Shop ---
+  // --- Pokemon Shop (tabbed BUY / SELL) ---
   private drawPokemonShop(): void {
-    this.add.text(GAME_W / 2, 30, "BUY POKEMON", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 55, `Gold: ${this.gameState.gold}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 24, "POKEMON TRADER", { fontSize: "19px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 46, `Gold: ${this.gameState.gold}`, { fontSize: "13px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
 
+    // Buy / Sell tabs
+    const tabY = 70;
+    const tabs: { mode: PokeshopMode; label: string }[] = [
+      { mode: "buy", label: "BUY" },
+      { mode: "sell", label: "SELL" },
+    ];
+    tabs.forEach((tab, idx) => {
+      const x = GAME_W / 2 + (idx === 0 ? -60 : 60);
+      const active = this.pokeshopMode === tab.mode;
+      const bg = this.add.rectangle(x, tabY, 100, 28, active ? 0x4466aa : 0x1a1a2e)
+        .setOrigin(0.5)
+        .setStrokeStyle(1, active ? 0x88aadd : 0x444466);
+      this.add.text(x, tabY, tab.label, {
+        fontSize: "13px", fontFamily: "monospace",
+        color: active ? "#ffffff" : "#8899aa",
+        fontStyle: "bold",
+      }).setOrigin(0.5);
+      bg.setInteractive();
+      bg.on("pointerdown", () => {
+        if (this.pokeshopMode === tab.mode) return;
+        this.pokeshopMode = tab.mode;
+        this.listPage = 0;
+        this.showScreen("pokeshop", false);
+      });
+    });
+
+    if (this.pokeshopMode === "buy") {
+      this.drawPokemonBuyList();
+    } else {
+      this.drawPokemonSellList();
+    }
+  }
+
+  private drawPokemonBuyList(): void {
     const available = getAvailableShopPokemon(this.gameState.seenPokemon, this.gameState.roster);
 
     if (available.length === 0) {
-      this.add.text(GAME_W / 2, 300, "No new Pokemon\navailable yet!", { fontSize: "14px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
+      this.add.text(GAME_W / 2, 300, "No new Pokemon\navailable yet!\n\nFight wild Pokemon to\nunlock them in the shop.", { fontSize: "13px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
       return;
     }
 
-    available.forEach((shopPoke, i) => {
+    this.clampListPage(available.length);
+    const { slice, start } = this.pagedSlice(available);
+
+    slice.forEach((shopPoke, localIdx) => {
+      const i = start + localIdx;
+      void i;
       const species = getPokemon(shopPoke.speciesId);
-      const y = 95 + i * 68;
+      const y = 115 + localIdx * 58;
       const canAfford = this.gameState.gold >= shopPoke.cost;
 
-      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 55, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 52, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
 
       if (this.textures.exists(species.spriteKey)) {
         const img = this.add.image(GAME_W / 2 - 140, y, species.spriteKey).setDisplaySize(38, 38).setOrigin(0.5);
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(GAME_W / 2 - 105, y - 10, species.name, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 105, y - 12, `${species.name}  Lv${shopPoke.level}`, { fontSize: "13px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
       const typeStr = species.types.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join("/");
-      this.add.text(GAME_W / 2 - 105, y + 10, typeStr, { fontSize: "10px", fontFamily: "monospace", color: "#aaaacc" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 105, y + 3, typeStr, { fontSize: "10px", fontFamily: "monospace", color: "#aaaacc" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 105, y + 16, `Highest seen in wild`, { fontSize: "8px", fontFamily: "monospace", color: "#667788" }).setOrigin(0, 0.5);
       this.add.text(GAME_W / 2 + 130, y, `${shopPoke.cost}g`, { fontSize: "14px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
 
       if (canAfford) {
         cardBg.setInteractive();
         cardBg.on("pointerdown", () => {
           this.gameState.gold -= shopPoke.cost;
-          this.gameState.roster.push(createBattlePokemon(species, 5));
+          this.gameState.roster.push(createBattlePokemon(species, shopPoke.level));
           saveGame(this.gameState);
-          this.showScreen("pokeshop");
-          this.showToast(`${species.name} joined your roster!  -${shopPoke.cost}g`, { sfx: "purchase" });
+          this.showScreen("pokeshop", false);
+          this.showToast(`${species.name} (Lv${shopPoke.level}) joined your roster!  -${shopPoke.cost}g`, { sfx: "purchase" });
         });
       }
     });
+
+    this.drawPagination(available.length, () => this.showScreen("pokeshop", false));
+  }
+
+  // --- Sell list ---
+  private drawPokemonSellList(): void {
+    const roster = this.gameState.roster;
+    if (roster.length <= 1) {
+      this.add.text(GAME_W / 2, 300,
+        "You can't sell your last\nPokemon!\n\nCatch or buy more before\nselling any.",
+        { fontSize: "13px", fontFamily: "monospace", color: "#ff8888", align: "center" }
+      ).setOrigin(0.5);
+      return;
+    }
+
+    const sorted = this.getSortedRoster();
+    this.clampListPage(sorted.length);
+    const { slice } = this.pagedSlice(sorted);
+
+    slice.forEach((pokemon, localIdx) => {
+      const y = 115 + localIdx * 58;
+      const sellValue = getPokemonSellValue(pokemon.species, pokemon.level);
+      const locked = pokemon.isFavourite;
+
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 52, locked ? 0x1a1a22 : 0x2a2a3e, 0.9)
+        .setOrigin(0.5)
+        .setStrokeStyle(1, locked ? 0x554433 : 0x444466);
+
+      if (this.textures.exists(pokemon.species.spriteKey)) {
+        const img = this.add.image(GAME_W / 2 - 140, y, pokemon.species.spriteKey).setDisplaySize(38, 38).setOrigin(0.5);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+
+      const nameLabel = locked ? `★ ${pokemon.species.name}` : pokemon.species.name;
+      this.add.text(GAME_W / 2 - 105, y - 12, `${nameLabel}  Lv${pokemon.level}`, {
+        fontSize: "13px", fontFamily: "monospace",
+        color: locked ? "#ffcc33" : "#ffffff",
+        fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      const typeStr = pokemon.species.types.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).join("/");
+      this.add.text(GAME_W / 2 - 105, y + 3, typeStr, { fontSize: "10px", fontFamily: "monospace", color: "#aaaacc" }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 105, y + 16, locked ? "Favourited — can't sell" : `HP ${pokemon.currentHP}/${pokemon.maxHP}`, {
+        fontSize: "8px", fontFamily: "monospace", color: locked ? "#886644" : "#667788",
+      }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 + 130, y, `+${sellValue}g`, {
+        fontSize: "14px", fontFamily: "monospace",
+        color: locked ? "#554433" : "#88ff88", fontStyle: "bold",
+      }).setOrigin(0.5);
+
+      if (!locked) {
+        cardBg.setInteractive();
+        cardBg.on("pointerdown", () => this.confirmPokemonSell(pokemon, sellValue));
+      }
+    });
+
+    this.drawPagination(sorted.length, () => this.showScreen("pokeshop", false));
+  }
+
+  private confirmPokemonSell(pokemon: BattlePokemon, sellValue: number): void {
+    // Dim backdrop over the existing screen.
+    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7)
+      .setOrigin(0.5)
+      .setDepth(1000)
+      .setInteractive();
+
+    const panel = this.add.rectangle(GAME_W / 2, GAME_H / 2, 320, 240, 0x1a1a2e)
+      .setOrigin(0.5)
+      .setStrokeStyle(2, 0x4466aa)
+      .setDepth(1001);
+    void panel;
+
+    this.add.text(GAME_W / 2, GAME_H / 2 - 100, "SELL POKEMON?", {
+      fontSize: "16px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(1002);
+
+    if (this.textures.exists(pokemon.species.spriteKey)) {
+      const img = this.add.image(GAME_W / 2, GAME_H / 2 - 50, pokemon.species.spriteKey)
+        .setDisplaySize(56, 56).setOrigin(0.5).setDepth(1002);
+      img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+
+    this.add.text(GAME_W / 2, GAME_H / 2 - 5, `${pokemon.species.name}  Lv${pokemon.level}`, {
+      fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(1002);
+
+    this.add.text(GAME_W / 2, GAME_H / 2 + 18, `Sell value: +${sellValue}g`, {
+      fontSize: "12px", fontFamily: "monospace", color: "#88ff88",
+    }).setOrigin(0.5).setDepth(1002);
+
+    this.add.text(GAME_W / 2, GAME_H / 2 + 38, "This is permanent!", {
+      fontSize: "10px", fontFamily: "monospace", color: "#ff8888",
+    }).setOrigin(0.5).setDepth(1002);
+
+    // Cancel
+    const cancelBg = this.add.rectangle(GAME_W / 2 - 70, GAME_H / 2 + 80, 120, 36, 0x333344)
+      .setOrigin(0.5).setStrokeStyle(1, 0x555566).setDepth(1002).setInteractive();
+    this.add.text(GAME_W / 2 - 70, GAME_H / 2 + 80, "CANCEL", {
+      fontSize: "12px", fontFamily: "monospace", color: "#cccccc", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(1003);
+    cancelBg.on("pointerdown", () => this.showScreen("pokeshop", false));
+
+    // Confirm sell
+    const sellBg = this.add.rectangle(GAME_W / 2 + 70, GAME_H / 2 + 80, 120, 36, 0x885533)
+      .setOrigin(0.5).setStrokeStyle(1, 0xaa7744).setDepth(1002).setInteractive();
+    this.add.text(GAME_W / 2 + 70, GAME_H / 2 + 80, "SELL", {
+      fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5).setDepth(1003);
+    sellBg.on("pointerdown", () => this.doPokemonSell(pokemon, sellValue));
+
+    // Block clicks behind the panel
+    overlay.on("pointerdown", () => { /* swallow */ });
+  }
+
+  private doPokemonSell(pokemon: BattlePokemon, sellValue: number): void {
+    const idx = this.gameState.roster.indexOf(pokemon);
+    if (idx < 0) {
+      this.showScreen("pokeshop", false);
+      return;
+    }
+    // Removing from roster invalidates any indices in selectedParty — simplest
+    // to clear the current party picker state and let the user re-pick.
+    this.gameState.roster.splice(idx, 1);
+    this.gameState.playerParty = this.gameState.playerParty.filter((p) => p !== pokemon);
+    this.selectedParty = [];
+    this.gameState.gold += sellValue;
+    saveGame(this.gameState);
+    this.showScreen("pokeshop", false);
+    this.showToast(`Sold ${pokemon.species.name}!  +${sellValue}g`, { sfx: "purchase", color: "#88ff88" });
   }
 
   // --- Egg Shop ---
@@ -922,8 +1094,8 @@ export class MainMenuScene extends Phaser.Scene {
 
   // --- Party Select ---
   private drawPartySelect(): void {
-    this.add.text(GAME_W / 2, 25, "SELECT PARTY", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 50, `${this.selectedParty.length}/${PARTY_SIZE} selected — tap to toggle`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 22, "SELECT PARTY", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 44, `${this.selectedParty.length}/${PARTY_SIZE} selected — tap to toggle`, { fontSize: "11px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
 
     // Selected preview
     if (this.selectedParty.length > 0) {
@@ -931,18 +1103,35 @@ export class MainMenuScene extends Phaser.Scene {
         const p = this.gameState.roster[idx];
         const x = GAME_W / 2 - (this.selectedParty.length - 1) * 25 + i * 50;
         if (this.textures.exists(p.species.spriteKey)) {
-          const img = this.add.image(x, 78, p.species.spriteKey).setDisplaySize(32, 32).setOrigin(0.5);
+          const img = this.add.image(x, 70, p.species.spriteKey).setDisplaySize(32, 32).setOrigin(0.5);
           img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
       });
     }
 
-    this.clampListPage(this.gameState.roster.length);
-    const { slice, start } = this.pagedSlice(this.gameState.roster);
+    this.drawSortBar<RosterSort>(
+      96,
+      [
+        { value: "level", label: "LEVEL" },
+        { value: "type", label: "TYPE" },
+        { value: "name", label: "A-Z" },
+      ],
+      this.rosterSort,
+      (value) => {
+        if (value === this.rosterSort) return;
+        this.rosterSort = value;
+        this.listPage = 0;
+        this.showScreen("party", false);
+      },
+    );
+
+    const sorted = this.getSortedRoster();
+    this.clampListPage(sorted.length);
+    const { slice } = this.pagedSlice(sorted);
 
     slice.forEach((pokemon, localIdx) => {
-      const i = start + localIdx;
-      const y = 105 + localIdx * 55;
+      const i = this.gameState.roster.indexOf(pokemon);
+      const y = 120 + localIdx * 55;
       const isSelected = this.selectedParty.includes(i);
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 46, isSelected ? 0x334422 : 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(2, isSelected ? 0x44aa22 : 0x444466);
@@ -952,8 +1141,14 @@ export class MainMenuScene extends Phaser.Scene {
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(GAME_W / 2 - 120, y - 5, pokemon.species.name, { fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 - 120, y + 12, `Lv${pokemon.level}`, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+      const nameLabel = pokemon.isFavourite ? `★ ${pokemon.species.name}` : pokemon.species.name;
+      this.add.text(GAME_W / 2 - 120, y - 5, nameLabel, {
+        fontSize: "12px", fontFamily: "monospace",
+        color: pokemon.isFavourite ? "#ffcc33" : "#ffffff",
+        fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      const typeStr = pokemon.species.types.map((t) => t.substring(0, 3).toUpperCase()).join("/");
+      this.add.text(GAME_W / 2 - 120, y + 12, `Lv${pokemon.level}  ${typeStr}`, { fontSize: "9px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
 
       if (isSelected) {
         this.add.text(GAME_W / 2 + 145, y, "OK", { fontSize: "14px", fontFamily: "monospace", color: "#44aa22", fontStyle: "bold" }).setOrigin(0.5);
@@ -970,7 +1165,7 @@ export class MainMenuScene extends Phaser.Scene {
       });
     });
 
-    this.drawPagination(this.gameState.roster.length, () => this.showScreen("party", false));
+    this.drawPagination(sorted.length, () => this.showScreen("party", false));
 
     // GO button
     if (this.selectedParty.length > 0) {

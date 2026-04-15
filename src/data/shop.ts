@@ -2,12 +2,35 @@ import type { ShopPokemon, ShopItem, BattlePokemon, PokemonSpecies, MoveData, St
 import { getPokemon, POKEMON } from "./pokemon.ts";
 import { getMove } from "./moves.ts";
 
-/** Price based on rarity + base stat total */
-function getPokemonCost(species: PokemonSpecies): number {
+/** Base price based on rarity + base stat total (at the starter level of 5). */
+function getPokemonBaseCost(species: PokemonSpecies): number {
   const s = species.baseStats;
   const bst = s.hp + s.atk + s.def + s.spd + s.spc;
   const rarityMult = species.rarity === "rare" ? 3 : species.rarity === "uncommon" ? 1.5 : 1;
   return Math.floor((bst / 3 + 30) * rarityMult);
+}
+
+/** The minimum level a Pokemon can be purchased at. */
+export const SHOP_POKEMON_MIN_LEVEL = 5;
+
+/**
+ * Full purchase cost scaled for buying a Pokemon at `level`. Costs grow
+ * linearly with level above the baseline (level 5 = 1x, level 10 = 2x,
+ * level 20 = 4x, etc) so late-game roster top-ups feel meaningful.
+ */
+export function getPokemonPurchaseCost(species: PokemonSpecies, level: number): number {
+  const base = getPokemonBaseCost(species);
+  const effectiveLevel = Math.max(level, SHOP_POKEMON_MIN_LEVEL);
+  const mult = effectiveLevel / SHOP_POKEMON_MIN_LEVEL;
+  return Math.max(1, Math.floor(base * mult));
+}
+
+/**
+ * Sell-back value is half the purchase cost at the Pokemon's current level —
+ * so selling a level-20 species you bought for 200g nets 100g.
+ */
+export function getPokemonSellValue(species: PokemonSpecies, level: number): number {
+  return Math.max(1, Math.floor(getPokemonPurchaseCost(species, level) / 2));
 }
 
 // Items available, gated by world progress
@@ -62,22 +85,33 @@ export const SHOP_ITEMS_SCALED: (ShopItem & { worldRequired: number })[] = [
   { itemId: "tm_hyper_beam", cost: 1500, worldRequired: 4 },
 ];
 
-/** Get Pokemon available in shop — must have been SEEN in battle and not already owned */
+/**
+ * Get Pokemon available in shop — must have been SEEN in battle and not
+ * already owned. Each entry is sold at the highest level the player has
+ * encountered that species at (minimum `SHOP_POKEMON_MIN_LEVEL`), and the
+ * cost scales accordingly.
+ */
 export function getAvailableShopPokemon(
-  seenPokemon: string[],
+  seenPokemon: Record<string, number>,
   roster: BattlePokemon[]
 ): ShopPokemon[] {
-  return seenPokemon
-    .filter((id) => !roster.some((r) => r.species.id === id))
-    .map((id) => {
-      try {
-        const species = getPokemon(id);
-        return { speciesId: id, cost: getPokemonCost(species) };
-      } catch {
-        return null;
-      }
-    })
-    .filter((x): x is ShopPokemon => x !== null);
+  const owned = new Set(roster.map((r) => r.species.id));
+  const entries: ShopPokemon[] = [];
+  for (const [id, seenLevel] of Object.entries(seenPokemon)) {
+    if (owned.has(id)) continue;
+    try {
+      const species = getPokemon(id);
+      const level = Math.max(seenLevel, SHOP_POKEMON_MIN_LEVEL);
+      entries.push({
+        speciesId: id,
+        level,
+        cost: getPokemonPurchaseCost(species, level),
+      });
+    } catch {
+      // unknown species id — skip
+    }
+  }
+  return entries;
 }
 
 export function getAvailableShopItems(

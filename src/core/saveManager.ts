@@ -4,6 +4,7 @@ import { getMove } from "../data/moves.ts";
 import { ITEMS } from "../data/items.ts";
 import { MAPS_PER_WORLD, TOTAL_WORLDS } from "../data/worlds.ts";
 import { createEgg } from "../data/eggs.ts";
+import { SHOP_POKEMON_MIN_LEVEL } from "../data/shop.ts";
 import { applyStatBonuses, calculateAllStats, createBattlePokemon, getMovesForLevel, zeroStats } from "./statCalc.ts";
 
 const SAVE_KEY_PREFIX = "pokemonGauntlet_save_";
@@ -36,7 +37,13 @@ interface SaveData {
   partyIndices: number[];
   items: { itemId: string; quantity: number }[];
   gold: number;
-  seenPokemon: string[];
+  /**
+   * speciesId -> highest level the player has ever encountered that species
+   * at. Older saves wrote this as a plain string[] of species IDs; on load
+   * those get migrated with an assumed seen-level of {@link SHOP_POKEMON_MIN_LEVEL}
+   * so existing shop entries still work.
+   */
+  seenPokemon: Record<string, number> | string[];
   worlds: WorldProgress[];
   activeWorld: number;
   eggs?: EggInstance[];
@@ -176,7 +183,7 @@ function buildGameState(data: SaveData): GameState {
     playerParty,
     playerItems,
     gold: data.gold,
-    seenPokemon: data.seenPokemon ?? [],
+    seenPokemon: migrateSeenPokemon(data.seenPokemon),
     worlds,
     activeWorld,
     currentMap: null,
@@ -185,6 +192,22 @@ function buildGameState(data: SaveData): GameState {
     repelSteps: 0,
     eggs: data.eggs ?? [],
   };
+}
+
+/**
+ * Normalise seenPokemon from either the legacy `string[]` shape or the
+ * current `Record<string, number>` shape. Array entries are assumed to have
+ * been seen at {@link SHOP_POKEMON_MIN_LEVEL} since we have no historical
+ * level data for them.
+ */
+function migrateSeenPokemon(raw: SaveData["seenPokemon"] | undefined): Record<string, number> {
+  if (!raw) return {};
+  if (Array.isArray(raw)) {
+    const out: Record<string, number> = {};
+    for (const id of raw) out[id] = SHOP_POKEMON_MIN_LEVEL;
+    return out;
+  }
+  return { ...raw };
 }
 
 export function loadGame(): GameState | null {
@@ -303,12 +326,12 @@ export function createTestGameState(): GameState {
     playerParty,
     playerItems,
     gold: 5000,
-    seenPokemon: [
-      "charmander", "squirtle", "bulbasaur",
-      "pikachu", "pidgey", "pidgeotto",
-      "rattata", "caterpie", "weedle",
-      "geodude", "zubat", "clefairy",
-    ],
+    seenPokemon: {
+      charmander: 10, squirtle: 10, bulbasaur: 10,
+      pikachu: 15, pidgey: 12, pidgeotto: 20,
+      rattata: 8, caterpie: 5, weedle: 5,
+      geodude: 14, zubat: 12, clefairy: 18,
+    },
     worlds,
     activeWorld: 0,
     currentMap: null,
