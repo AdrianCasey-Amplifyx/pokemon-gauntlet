@@ -28,6 +28,11 @@ export class MapScene extends Phaser.Scene {
   private repelBar: Phaser.GameObjects.Rectangle | null = null;
   private repelBarBg: Phaser.GameObjects.Rectangle | null = null;
   private bossDefeated = false;
+  // Count of currently-open modal overlays. The scene-level tap-to-move
+  // handler checks this to avoid leaking clicks through a modal into the
+  // map behind it. Use registerModal() to wire automatic decrement on
+  // destroy.
+  private activeModals = 0;
 
   constructor() {
     super({ key: "MapScene" });
@@ -159,8 +164,14 @@ export class MapScene extends Phaser.Scene {
     this.createBottomButton(195, btnRow, "ITEMS", 0x885533, () => this.showItemModal(), 110);
     this.createBottomButton(325, btnRow, "ESCAPE", 0x553333, () => this.useEscapeRope(), 110);
 
-    // Tap-to-move
+    // Tap-to-move. `buildMapUI` is called many times per run (after using
+    // Map / Repel, on room rebuild, etc.) so we remove any previous
+    // handler before registering a fresh one — otherwise listeners stack
+    // and every tap fires tryMove multiple times. The `activeModals`
+    // guard stops taps from leaking through open modals into the map.
+    this.input.removeAllListeners("pointerdown");
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      if (this.activeModals > 0) return;
       const col = Math.floor((pointer.x - this.gridOffsetX) / this.tileSize);
       const row = Math.floor((pointer.y - this.gridOffsetY) / this.tileSize);
       if (row < 0 || row >= this.gridSize || col < 0 || col >= this.gridSize) return;
@@ -172,6 +183,14 @@ export class MapScene extends Phaser.Scene {
         else if (dy === 1) this.tryMove("down");
         else if (dy === -1) this.tryMove("up");
       }
+    });
+  }
+
+  /** Track a modal so tap-to-move ignores clicks while it is open. */
+  private registerModal(obj: Phaser.GameObjects.GameObject): void {
+    this.activeModals++;
+    obj.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.activeModals = Math.max(0, this.activeModals - 1);
     });
   }
 
@@ -445,8 +464,10 @@ export class MapScene extends Phaser.Scene {
   private playHatchOverlay(tier: EggTier, species: PokemonSpecies, level: number, onDismiss: () => void): void {
     const tierData = EGG_TIERS[tier];
     const container = this.add.container(0, 0).setDepth(500);
+    this.registerModal(container);
 
     const darkBg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.88).setOrigin(0.5);
+    darkBg.setInteractive();
     container.add(darkBg);
 
     MusicManager.playSFX("hatch");
@@ -574,6 +595,7 @@ export class MapScene extends Phaser.Scene {
 
     this.tweens.add({ targets: [overlay, text, tapText], alpha: 1, duration: 500 });
     overlay.setInteractive();
+    this.registerModal(overlay);
     overlay.once("pointerdown", () => this.scene.start("MainMenuScene"));
   }
 
@@ -651,6 +673,7 @@ export class MapScene extends Phaser.Scene {
   // === ITEMS MODAL ===
   private showPokemonModal(): void {
     const modal = this.add.container(0, 0).setDepth(200);
+    this.registerModal(modal);
 
     const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.92).setOrigin(0.5);
     bg.setInteractive();
@@ -744,6 +767,7 @@ export class MapScene extends Phaser.Scene {
   private showItemModal(): void {
     // Full screen modal overlay
     const modal = this.add.container(0, 0).setDepth(200);
+    this.registerModal(modal);
 
     // Background blocks all input below
     const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.9).setOrigin(0.5);
@@ -889,6 +913,7 @@ export class MapScene extends Phaser.Scene {
 
   private showItemTargetModal(belt: typeof this.gameState.playerItems[0]): void {
     const modal = this.add.container(0, 0).setDepth(200);
+    this.registerModal(modal);
     const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.9).setOrigin(0.5);
     bg.setInteractive();
     modal.add(bg);

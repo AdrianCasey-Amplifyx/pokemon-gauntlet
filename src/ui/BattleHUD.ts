@@ -428,10 +428,42 @@ export class BattleHUD {
     });
   }
 
+  /**
+   * Disable (or re-enable) input on the battle HUD's own buttons so an
+   * overlay modal can't leak clicks through to the move grid or the
+   * SWAP / ITEMS actions underneath it. Relying on Phaser's topOnly +
+   * a setInteractive backdrop wasn't enough in practice — taps on empty
+   * overlay space were still firing the HUD buttons below.
+   */
+  private setHudInputEnabled(enabled: boolean): void {
+    for (const btn of this.moveButtons) {
+      if (enabled) {
+        // Only re-enable slots that are actually showing a move —
+        // hidden empty slots should stay non-interactive.
+        if (btn.visible) btn.setInteractive();
+      } else {
+        btn.disableInteractive();
+      }
+    }
+    if (this.swapBtn) {
+      if (enabled) this.swapBtn.setInteractive();
+      else this.swapBtn.disableInteractive();
+    }
+    if (this.itemsBtn) {
+      if (enabled) this.itemsBtn.setInteractive();
+      else this.itemsBtn.disableInteractive();
+    }
+  }
+
+  private anyOverlayOpen(): boolean {
+    return !!(this.swapOverlay || this.itemOverlay || this.itemTargetOverlay);
+  }
+
   // --- Swap panel ---
   showSwapPanel(forceSwap: boolean): void {
     if (this.swapOverlay) return;
     this.closeAllOverlays();
+    this.setHudInputEnabled(false);
 
     this.swapOverlay = this.scene.add.container(0, 0).setDepth(150);
 
@@ -522,12 +554,14 @@ export class BattleHUD {
       this.swapOverlay.destroy(true);
       this.swapOverlay = null;
     }
+    if (!this.anyOverlayOpen()) this.setHudInputEnabled(true);
   }
 
   // --- Item panel ---
   showItemPanel(): void {
     if (this.itemOverlay) return;
     this.closeAllOverlays();
+    this.setHudInputEnabled(false);
 
     this.itemOverlay = this.scene.add.container(0, 0).setDepth(150);
     const bg = this.scene.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5);
@@ -617,10 +651,12 @@ export class BattleHUD {
       this.itemOverlay.destroy(true);
       this.itemOverlay = null;
     }
+    if (!this.anyOverlayOpen()) this.setHudInputEnabled(true);
   }
 
   // --- Item target selection ---
   private showItemTargetPanel(itemIndex: number): void {
+    this.setHudInputEnabled(false);
     this.itemTargetOverlay = this.scene.add.container(0, 0).setDepth(150);
     const bg = this.scene.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5);
     bg.setInteractive();
@@ -704,6 +740,7 @@ export class BattleHUD {
       this.itemTargetOverlay.destroy(true);
       this.itemTargetOverlay = null;
     }
+    if (!this.anyOverlayOpen()) this.setHudInputEnabled(true);
   }
 
   closeAllOverlays(): void {
