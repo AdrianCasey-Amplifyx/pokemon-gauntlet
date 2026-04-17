@@ -190,26 +190,46 @@ describe("applyItem dispatch", () => {
   });
 });
 
-describe("canUseTM type-match rule", () => {
-  it("allows type-matched TM", () => {
-    const charmander = createBattlePokemon(getPokemon("charmander"), 20);
-    // Charmander already knows ember by default at level 20 (if in pool)
-    // Use a move it definitely doesn't know
-    const check = canUseTM(charmander, "fire_blast");
+describe("canUseTM (Gen 1 Bulbapedia compatibility)", () => {
+  it("allows cross-type TM when species is in the Bulbapedia compat list", () => {
+    // Clefairy famously learns almost every TM including Body Slam. This
+    // is the whole point of the Bulbapedia rebase: cross-type TMs that the
+    // old shared-type heuristic wrongly rejected.
+    const clefairy = createBattlePokemon(getPokemon("clefairy"), 20);
+    const check = canUseTM(clefairy, "tm_body_slam", "body_slam");
     expect(check.ok).toBe(true);
   });
 
-  it("rejects type-mismatched TM", () => {
+  it("allows Charmander to learn TM Body Slam (cross-type)", () => {
     const charmander = createBattlePokemon(getPokemon("charmander"), 20);
-    const check = canUseTM(charmander, "thunderbolt");
+    const check = canUseTM(charmander, "tm_body_slam", "body_slam");
+    expect(check.ok).toBe(true);
+  });
+
+  it("allows Charmander to learn TM Fire Blast (same-type)", () => {
+    const charmander = createBattlePokemon(getPokemon("charmander"), 20);
+    const check = canUseTM(charmander, "tm_fire_blast", "fire_blast");
+    expect(check.ok).toBe(true);
+  });
+
+  it("rejects Caterpie from learning TM Hyper Beam (incompatible species)", () => {
+    const caterpie = createBattlePokemon(getPokemon("caterpie"), 10);
+    const check = canUseTM(caterpie, "tm_hyper_beam", "hyper_beam");
     expect(check.ok).toBe(false);
-    expect(check.reason).toBe("type_mismatch");
+    expect(check.reason).toBe("incompatible");
+  });
+
+  it("rejects Magikarp from learning anything non-basic", () => {
+    const magikarp = createBattlePokemon(getPokemon("magikarp"), 10);
+    const check = canUseTM(magikarp, "tm_hyper_beam", "hyper_beam");
+    expect(check.ok).toBe(false);
+    expect(check.reason).toBe("incompatible");
   });
 
   it("rejects TM for a move already known", () => {
     const p = createBattlePokemon(getPokemon("charmander"), 20);
     p.moves.push(getMove("fire_blast"));
-    const check = canUseTM(p, "fire_blast");
+    const check = canUseTM(p, "tm_fire_blast", "fire_blast");
     expect(check.ok).toBe(false);
     expect(check.reason).toBe("already_knows");
   });

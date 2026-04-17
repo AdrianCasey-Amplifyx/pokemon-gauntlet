@@ -1,6 +1,7 @@
 import type { ShopPokemon, ShopItem, BattlePokemon, PokemonSpecies, MoveData, Stats } from "../types.ts";
 import { getPokemon, POKEMON } from "./pokemon.ts";
 import { getMove } from "./moves.ts";
+import { canLearnTM } from "./tmCompatibility.ts";
 
 /** Base price based on rarity + base stat total (at the starter level of 5). */
 function getPokemonBaseCost(species: PokemonSpecies): number {
@@ -215,18 +216,20 @@ export function canUseVitamin(pokemon: BattlePokemon, stat: keyof Stats): boolea
 
 export interface TMCheckResult {
   ok: boolean;
-  reason?: "already_knows" | "type_mismatch" | "unknown_move";
+  reason?: "already_knows" | "incompatible" | "unknown_move";
   label?: string; // short label for UI disabled state
 }
 
 /**
- * TMs are type-matched only: the pokemon must share at least one type with
- * the move's type. Also must not already know the move.
+ * Gen 1 Bulbapedia per-species TM compatibility. A Pokemon can learn a TM
+ * if its species is in that TM's compatibility list (see
+ * `src/data/tmCompatibility.ts`). This replaces the earlier
+ * "shared-type" heuristic, which wrongly rejected cross-type TMs like
+ * Body Slam on Clefairy or Ice Beam on Lapras's siblings.
  */
-export function canUseTM(pokemon: BattlePokemon, moveId: string): TMCheckResult {
-  let move: MoveData;
+export function canUseTM(pokemon: BattlePokemon, tmItemId: string, moveId: string): TMCheckResult {
   try {
-    move = getMove(moveId);
+    getMove(moveId);
   } catch {
     return { ok: false, reason: "unknown_move", label: "Unknown" };
   }
@@ -235,8 +238,8 @@ export function canUseTM(pokemon: BattlePokemon, moveId: string): TMCheckResult 
     return { ok: false, reason: "already_knows", label: "Already knows" };
   }
 
-  if (!pokemon.species.types.includes(move.type)) {
-    return { ok: false, reason: "type_mismatch", label: "Type mismatch" };
+  if (!canLearnTM(pokemon.species.id, tmItemId)) {
+    return { ok: false, reason: "incompatible", label: "Can't learn" };
   }
 
   return { ok: true };

@@ -31,6 +31,7 @@ src/
     pokemon.ts               # 151 Gen 1 Pokemon with stats, movesets, evolution (level + stone)
     moves.ts                 # 80+ moves across 15 types, 4 cooldown tiers
     items.ts                 # Items (medicine/field/vitamin/stone/candy/battle/tm), applyItem dispatcher
+    tmCompatibility.ts       # Per-species Gen 1 Bulbapedia TM learnset, canLearnTM(speciesId, tmItemId)
     typeChart.ts             # 15-type effectiveness matrix (Gen 1)
     shop.ts                  # Shop pricing, availability, move training, vitamin/TM/candy helpers
     pokedexEntries.ts        # One-sentence flavor description per Gen 1 species (Pokedex reveal content)

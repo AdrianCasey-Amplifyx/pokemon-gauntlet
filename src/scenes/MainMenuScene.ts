@@ -1538,7 +1538,7 @@ export class MainMenuScene extends Phaser.Scene {
         const move = getTMMove(belt.item);
         if (!move) return;
 
-        const check = canUseTM(pokemon, move.id);
+        const check = canUseTM(pokemon, belt.item.id, move.id);
         const canAfford = true; // TMs consume the item, not gold
         const canTeach = check.ok && canAfford;
 
@@ -1590,7 +1590,7 @@ export class MainMenuScene extends Phaser.Scene {
     const move = getTMMove(belt.item);
     if (!move) return;
 
-    const check = canUseTM(pokemon, move.id);
+    const check = canUseTM(pokemon, belt.item.id, move.id);
     if (!check.ok) return;
 
     if (pokemon.moves.length < 4) {

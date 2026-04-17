@@ -457,10 +457,10 @@ These items can't be used during battle or on the map — only from the Items sc
 
 ### 7.4 Training Centre — TM teaching
 
-The Train screen (per pokemon) now has a third section after Current Moves / Available to Learn: **Use TMs**. It lists every TM the player owns, each with a TEACH button. Eligibility comes from `canUseTM(pokemon, moveId)`:
+The Train screen (per pokemon) now has a third section after Current Moves / Available to Learn: **Use TMs**. It lists every TM the player owns, each with a TEACH button. Eligibility comes from `canUseTM(pokemon, tmItemId, moveId)`:
 
 - **Already knows** → disabled grey label.
-- **Type mismatch** → disabled grey label. TMs are **type-matched only**: the pokemon must share at least one type with the move's type.
+- **Can't learn** → disabled grey label. Compatibility follows the **Gen 1 Bulbapedia TM/HM learnset** — a per-species allow-list keyed by TM item id in `src/data/tmCompatibility.ts`. So Clefairy can learn Body Slam + Ice Beam + Thunderbolt + Psychic + Fire Blast + Hyper Beam like canon; Charmander can learn Body Slam and Earthquake despite not being a Normal/Ground type; but Caterpie and Magikarp can't learn Hyper Beam.
 - **OK** → enabled button. On click, if the pokemon has < 4 moves the TM is appended; otherwise a "Which move should be forgotten?" picker appears (same style as the existing FORGET button), then replaces the chosen move.
 
 ### 7.5 Starter Inventory
