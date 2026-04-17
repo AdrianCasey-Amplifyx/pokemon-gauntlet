@@ -39,7 +39,11 @@ export const SHOP_ITEMS_SCALED: (ShopItem & { worldRequired: number })[] = [
   // Medicine
   { itemId: "potion", cost: 30, worldRequired: 0 },
   { itemId: "super_potion", cost: 80, worldRequired: 1 },
+  { itemId: "hyper_potion", cost: 180, worldRequired: 3 },
   { itemId: "revive", cost: 120, worldRequired: 2 },
+  { itemId: "antidote", cost: 25, worldRequired: 0 },
+  { itemId: "paralyze_heal", cost: 25, worldRequired: 0 },
+  { itemId: "awakening", cost: 35, worldRequired: 0 },
 
   // Field
   { itemId: "escape_rope", cost: 40, worldRequired: 0 },

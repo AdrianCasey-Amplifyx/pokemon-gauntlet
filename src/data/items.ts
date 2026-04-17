@@ -4,6 +4,7 @@ import type {
   BattlePokemon,
   Stats,
   StageBoosts,
+  StatusType,
   PokemonSpecies,
 } from "../types.ts";
 import { addXP, applyStatBonuses, evolveIntoSpecies, xpToNextLevel } from "../core/statCalc.ts";
@@ -59,12 +60,43 @@ export const ITEMS: Record<string, ItemData> = {
     category: "medicine",
     target: "ally",
   },
+  hyper_potion: {
+    id: "hyper_potion",
+    name: "Hyper Potion",
+    description: "Heals 120 HP.",
+    category: "medicine",
+    target: "ally",
+  },
   revive: {
     id: "revive",
     name: "Revive",
     description: "Revives a fainted Pokemon at 25% HP.",
     category: "medicine",
     target: "ally",
+  },
+  antidote: {
+    id: "antidote",
+    name: "Antidote",
+    description: "Cures poison.",
+    category: "medicine",
+    target: "ally",
+    param: "poison",
+  },
+  paralyze_heal: {
+    id: "paralyze_heal",
+    name: "Paralyze Heal",
+    description: "Cures paralysis.",
+    category: "medicine",
+    target: "ally",
+    param: "paralyze",
+  },
+  awakening: {
+    id: "awakening",
+    name: "Awakening",
+    description: "Wakes a sleeping Pokemon.",
+    category: "medicine",
+    target: "ally",
+    param: "sleep",
   },
 
   // Field
@@ -300,6 +332,7 @@ export type ApplyResult =
   | { kind: "evolve"; oldName: string; newSpecies: PokemonSpecies }
   | { kind: "levelup"; newLevel: number }
   | { kind: "boost"; stat: keyof StageBoosts; stages: number }
+  | { kind: "cure"; status: StatusType }
   | { kind: "fail"; reason: string };
 
 export interface ApplyContext {
@@ -312,6 +345,15 @@ function applyHeal(amount: number, target: BattlePokemon): ApplyResult {
   const heal = Math.min(amount, target.maxHP - target.currentHP);
   target.currentHP += heal;
   return { kind: "heal", healAmount: heal };
+}
+
+function applyStatusCure(status: StatusType, target: BattlePokemon): ApplyResult {
+  if (target.currentHP <= 0) return { kind: "fail", reason: "Fainted" };
+  if (!target.statusEffects.includes(status)) {
+    return { kind: "fail", reason: "No status to cure" };
+  }
+  target.statusEffects = target.statusEffects.filter((s) => s !== status);
+  return { kind: "cure", status };
 }
 
 function applyRevive(target: BattlePokemon): ApplyResult {
@@ -389,7 +431,11 @@ export function applyItem(
     case "medicine": {
       if (itemId === "potion") return applyHeal(30, target);
       if (itemId === "super_potion") return applyHeal(60, target);
+      if (itemId === "hyper_potion") return applyHeal(120, target);
       if (itemId === "revive") return applyRevive(target);
+      if (item.param === "poison" || item.param === "paralyze" || item.param === "sleep") {
+        return applyStatusCure(item.param as StatusType, target);
+      }
       return { kind: "fail", reason: "Unknown medicine" };
     }
     case "vitamin":

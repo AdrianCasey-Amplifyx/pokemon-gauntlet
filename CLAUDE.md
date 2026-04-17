@@ -38,6 +38,7 @@ src/
     stoneEvolutions.ts       # Stone → evolution lookup (Eevee branches, Raichu, Ninetales, etc)
     worlds.ts                # 8 worlds, encounter pools, scaling formulas, bosses
     eggs.ts                  # Egg tiers (common/rare/legendary), pools, hatch logic
+    rewardDrops.ts           # Room-clear + trainer-defeat drop pools and roll helpers (legendary egg gated to world 5+)
   core/
     battleStateMachine.ts    # Turn flow, action resolution, event system, X-item boost reset
     damageCalc.ts            # Damage formula with STAB + type effectiveness + stage multipliers
@@ -57,6 +58,7 @@ src/
     WorldSelectScene.ts      # 8 worlds with progress (not currently in main flow)
     MapScene.ts              # Fog-of-war grid dungeon with D-pad controls
     BattleScene.ts           # Turn-based battle with party switching and items
+    RoomClearScene.ts        # Area-cleared / trainer-defeat reward screen (drop rolls + room progression)
   ui/
     HPBar.ts                 # Animated HP bar component
     MoveButton.ts            # Move button with cooldown overlay

@@ -353,13 +353,17 @@ export class BattleScene extends Phaser.Scene {
       this.gameState.gold -= goldLost;
     }
 
-    // Mark boss as defeated so MapScene knows to let player through the exit
-    if (this.isBossBattle && result === "win") {
-      this.registry.set("bossDefeated", true);
-    }
-
     saveGame(this.gameState);
     this.registry.set("battleResult", result);
+
+    // Boss wins skip the VICTORY overlay and jump directly to the
+    // Trainer-Defeat screen in RoomClearScene — it surfaces the same XP/gold
+    // info alongside the boss portrait and guaranteed drop, and it handles
+    // room-clear progression so the old walk-off-the-exit-tile step is gone.
+    if (result === "win" && this.isBossBattle) {
+      this.routeToTrainerDefeat(goldEarned);
+      return;
+    }
 
     const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.6)
       .setOrigin(0.5).setDepth(200).setAlpha(0);
@@ -420,5 +424,32 @@ export class BattleScene extends Phaser.Scene {
         this.scene.start("MapScene");
       }
     });
+  }
+
+  private routeToTrainerDefeat(goldEarned: number): void {
+    const map = this.gameState.currentMap;
+    const boss = this.battleSM.enemyParty[0];
+
+    const totalXP = [...this.battleSM.xpEarned.values()].reduce((a, b) => a + b, 0);
+    const levelUps = this.battleSM.levelUps.map((lu) => ({
+      name: lu.pokemon.species.name,
+      newLevel: lu.newLevel,
+    }));
+    const newSeen = [...this.battleSM.seenSpeciesIds].filter(
+      (id) => !this.gameState.roster.some((r) => r.species.id === id)
+    ).length > 0;
+
+    this.registry.set("gameState", this.gameState);
+    this.registry.set("roomClearContext", {
+      kind: "trainer",
+      worldIndex: map?.worldIndex ?? this.gameState.activeWorld,
+      mapIndex: map?.mapIndex ?? 0,
+      battleXP: totalXP,
+      goldEarned,
+      levelUps,
+      newSeen,
+      bossSpeciesId: boss?.species.id,
+    });
+    this.scene.start("RoomClearScene");
   }
 }

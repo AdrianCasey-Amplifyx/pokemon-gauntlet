@@ -217,10 +217,25 @@ goldPerBattle    = (15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount
 
 ### 4.3 Boss Rooms
 
-Rooms **5, 10, 15, 20, and 25** (1-indexed) are boss rooms. When the player steps onto the exit tile in a boss room, they're locked into a battle against a boss before advancing.
+Rooms **5, 10, 15, 20, and 25** (1-indexed) are boss rooms. The exit tile in a boss room is drawn red with a `!` marker; stepping on it locks the player into a mandatory battle against a boss.
 
 - **Boss species** are rolled from a curated `WORLD_BOSSES` pool *separate from the world's regular encounter pool*. These are out-of-area standouts — e.g. Onix or Snorlax in Mt. Moon, Gyarados in Cerulean, Mewtwo/Articuno/etc. on Indigo Plateau.
 - **Boss level** = `encounterLevel + 3 + floor(worldIndex / 2)`, so bosses are a noticeable step up from the surrounding rooms.
+- **Boss victory** routes directly to the Trainer-Defeat screen (`RoomClearScene`, trainer mode) — the boss portrait, battle XP + gold, a guaranteed decent-pool drop, and 1% rare/legendary egg rolls. Tapping to continue advances the room and returns the player to town (no walk-off-the-exit-tile step).
+- **Boss defeat** returns the player to town with the 5% gold penalty; on next Adventure the room regenerates with a fresh boss roll.
+
+### 4.3.1 Area-Cleared Reward Screen
+
+When the player steps onto the exit tile of a **non-boss** room, `RoomClearScene` (area mode) runs the drop table:
+
+| Roll | Chance | Pool |
+|---|---|---|
+| Basic item | 25% | Potion · Antidote · Paralyze Heal · Awakening · Repel · Escape Rope · X-Attack · X-Defense · X-Speed |
+| Decent item | 5% | Super Potion · Revive · Hyper Potion · HP Up · Protein · Iron · Carbos · Calcium |
+| Rare Egg | 1% | All worlds |
+| Legendary Egg | 1% | **World 5+ only** (Celadon Gardens and beyond) |
+
+Rolls are independent — a single clear can award 0, 1, 2, 3, or 4 rewards. Boss rooms use the trainer drop table instead: **guaranteed decent-pool item** + 1% rare egg + 1% legendary egg (world 5+).
 
 ### 4.4 Map Generation
 
@@ -310,8 +325,12 @@ The Items screen (town) mirrors the PokeMart layout with the same seven tabs plu
 | Item | Cost | Unlocked after |
 |---|---|---|
 | Potion | 30 | World 0 |
+| Antidote | 25 | World 0 |
+| Paralyze Heal | 25 | World 0 |
+| Awakening | 35 | World 0 |
 | Super Potion | 80 | World 1 |
 | Revive | 120 | World 2 |
+| Hyper Potion | 180 | World 3 |
 
 **Field**
 
@@ -425,12 +444,14 @@ Eggs are bought in town, stored on `GameState.eggs`, and decrement their `stepsR
 
 **Hatch level:** `max(5, floor(avg level of top 3 roster Pokemon by level))`. This keeps hatched Pokemon useful regardless of when the player bought the egg.
 
-### 6.5 Battle Rewards
+### 6.5 Battle & Room Rewards
 
-- **Gold** on win: `(15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount + rand(0..19)`
+- **Gold** on win: `(15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount + rand(0..19)` — tripled on boss wins
 - **XP** per defeated enemy: `enemyLevel * 6 + 10 + rand(0..7)` — awarded to every alive party member
 - **Gold tile pickups** scale with world index and are rolled during map generation
 - **Defeat penalty:** `floor(currentGold × 0.05)` — 5% of current gold on party wipe, then return to town (no auto-heal)
+
+**Room-clear drops** (`src/data/rewardDrops.ts`) — rolled independently when the reward screen opens. Regular rooms: 25% basic item, 5% decent item, 1% rare egg, 1% legendary egg (world 5+ only). Boss rooms: **guaranteed** decent item + 1% rare/legendary egg rolls. See §4.3.1 for the full drop pools.
 
 ### 6.6 Leveling Curve
 

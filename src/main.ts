@@ -7,6 +7,7 @@ import { MainMenuScene } from "./scenes/MainMenuScene.ts";
 import { WorldSelectScene } from "./scenes/WorldSelectScene.ts";
 import { MapScene } from "./scenes/MapScene.ts";
 import { BattleScene } from "./scenes/BattleScene.ts";
+import { RoomClearScene } from "./scenes/RoomClearScene.ts";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -19,7 +20,7 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_HORIZONTALLY,
     parent: "game",
   },
-  scene: [BootScene, PreloadScene, TitleScene, StarterSelectScene, MainMenuScene, WorldSelectScene, MapScene, BattleScene],
+  scene: [BootScene, PreloadScene, TitleScene, StarterSelectScene, MainMenuScene, WorldSelectScene, MapScene, BattleScene, RoomClearScene],
 };
 
 new Phaser.Game(config);

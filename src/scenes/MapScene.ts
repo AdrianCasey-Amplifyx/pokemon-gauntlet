@@ -27,7 +27,6 @@ export class MapScene extends Phaser.Scene {
   private repelText: Phaser.GameObjects.Text | null = null;
   private repelBar: Phaser.GameObjects.Rectangle | null = null;
   private repelBarBg: Phaser.GameObjects.Rectangle | null = null;
-  private bossDefeated = false;
   // Count of currently-open modal overlays. The scene-level tap-to-move
   // handler checks this to avoid leaking clicks through a modal into the
   // map behind it. Use registerModal() to wire automatic decrement on
@@ -45,15 +44,6 @@ export class MapScene extends Phaser.Scene {
 
     const battleResult = this.registry.get("battleResult") as string | undefined;
     if (battleResult) this.registry.remove("battleResult");
-
-    // Check if we just won a boss battle
-    const bossWon = this.registry.get("bossDefeated") as boolean | undefined;
-    if (bossWon) {
-      this.registry.remove("bossDefeated");
-      this.bossDefeated = true;
-    } else {
-      this.bossDefeated = false;
-    }
 
     this.gameState = this.registry.get("gameState") as GameState;
     if (!this.gameState || !this.gameState.currentMap) {
@@ -129,7 +119,7 @@ export class MapScene extends Phaser.Scene {
 
         let tileColor = 0x2a2a3e;
         if (tile.type === "wall") tileColor = 0x12121e;
-        else if (tile.type === "exit") tileColor = isBossRoom(map.mapIndex) && !this.bossDefeated ? 0x5a2a2a : 0x2a5a2a;
+        else if (tile.type === "exit") tileColor = isBossRoom(map.mapIndex) ? 0x5a2a2a : 0x2a5a2a;
 
         this.tileRects[row][col] = this.add
           .rectangle(x, y, this.tileSize - 1, this.tileSize - 1, tileColor).setOrigin(0, 0);
@@ -142,7 +132,7 @@ export class MapScene extends Phaser.Scene {
         }
 
         if (tile.type === "exit" && tile.revealed && tile.exitDirection) {
-          const isBoss = isBossRoom(map.mapIndex) && !this.bossDefeated;
+          const isBoss = isBossRoom(map.mapIndex);
           const arrows: Record<Direction, string> = { up: "^", down: "v", left: "<", right: ">" };
           const exitLabel = isBoss ? "!" : arrows[tile.exitDirection];
           const exitColor = isBoss ? "#ff4444" : "#88ff88";
@@ -408,7 +398,7 @@ export class MapScene extends Phaser.Scene {
 
         if (tile.type === "exit") {
           const map = this.gameState.currentMap!;
-          if (isBossRoom(map.mapIndex) && !this.bossDefeated) {
+          if (isBossRoom(map.mapIndex)) {
             this.triggerBossBattle();
             return;
           }
@@ -569,43 +559,14 @@ export class MapScene extends Phaser.Scene {
 
   // === MAP COMPLETION ===
   private completeMap(): void {
-    const worldIdx = this.gameState.activeWorld;
-    const world = this.gameState.worlds[worldIdx];
-    world.currentMap++;
-
-    const worldCleared = world.currentMap >= MAPS_PER_WORLD;
-    const nextExists = worldIdx + 1 < this.gameState.worlds.length;
-
-    // Clearing the final room of a world: unlock the next world AND
-    // auto-advance activeWorld so the town hub + next Adventure start
-    // at world N+1 room 1, not world N room 26/25.
-    if (worldCleared && nextExists) {
-      this.gameState.worlds[worldIdx + 1].unlocked = true;
-      this.gameState.activeWorld = worldIdx + 1;
-    }
-
-    this.gameState.currentMap = null;
-    this.registry.set("roomCleared", true);
-    saveGame(this.gameState);
-
-    const msg = worldCleared
-      ? (nextExists
-          ? `World Complete!\nAdvancing to\n${WORLD_NAMES[worldIdx + 1]}!`
-          : `All Worlds Complete!`)
-      : `Room ${world.currentMap}/${MAPS_PER_WORLD} cleared!`;
-
-    const overlay = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.7).setOrigin(0.5).setDepth(200).setAlpha(0);
-    const text = this.add.text(GAME_W / 2, GAME_H / 2 - 20, msg, {
-      fontSize: "20px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold", align: "center",
-    }).setOrigin(0.5).setDepth(201).setAlpha(0);
-    const tapText = this.add.text(GAME_W / 2, GAME_H / 2 + 40, "Tap to continue", {
-      fontSize: "14px", fontFamily: "monospace", color: "#cccccc",
-    }).setOrigin(0.5).setDepth(201).setAlpha(0);
-
-    this.tweens.add({ targets: [overlay, text, tapText], alpha: 1, duration: 500 });
-    overlay.setInteractive();
-    this.registerModal(overlay);
-    overlay.once("pointerdown", () => this.scene.start("MainMenuScene"));
+    const map = this.gameState.currentMap!;
+    this.registry.set("gameState", this.gameState);
+    this.registry.set("roomClearContext", {
+      kind: "area",
+      worldIndex: map.worldIndex,
+      mapIndex: map.mapIndex,
+    });
+    this.scene.start("RoomClearScene");
   }
 
   // === BATTLE TRIGGER ===

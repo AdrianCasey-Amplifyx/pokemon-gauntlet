@@ -55,9 +55,21 @@ export function describeItemResult(
         sfx: "item_use",
         color: "#88ccff",
       };
+    case "cure": {
+      const labels: Record<string, string> = {
+        poison: "poisoning",
+        paralyze: "paralysis",
+        sleep: "sleep",
+        burn: "burn",
+        confuse: "confusion",
+      };
+      return {
+        message: `${target.species.name} was cured of ${labels[result.status] ?? result.status}!`,
+        sfx: "heal",
+        color: "#88ffaa",
+      };
+    }
     case "evolve":
-      // Evolution flows use their own full-screen animation, but provide a
-      // fallback message for completeness.
       return {
         message: `${result.oldName} evolved into ${result.newSpecies.name}!`,
         sfx: "hatch",
