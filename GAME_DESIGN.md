@@ -221,10 +221,28 @@ Rooms **5, 10, 15, 20, and 25** (1-indexed) are boss rooms. The exit tile in a b
 
 - **Boss species** are rolled from a curated `WORLD_BOSSES` pool *separate from the world's regular encounter pool*. These are out-of-area standouts — e.g. Onix or Snorlax in Mt. Moon, Gyarados in Cerulean, Mewtwo/Articuno/etc. on Indigo Plateau.
 - **Boss level** = `encounterLevel + 3 + floor(worldIndex / 2)`, so bosses are a noticeable step up from the surrounding rooms.
+- **Room 25 — Gym battle.** The final boss room of every world is a **Gym** with the canonical Gen 1 leader and full roster (see §4.3.2). The single-boss roll is replaced by the gym team; the pre-battle banner reads `{City} Gym — {Leader}!`.
 - **Boss victory** routes directly to the Trainer-Defeat screen (`RoomClearScene`, trainer mode) — the boss portrait, battle XP + gold, a guaranteed decent-pool drop, and 1% rare/legendary egg rolls. Tapping to continue advances the room and returns the player to town (no walk-off-the-exit-tile step).
 - **Boss defeat** returns the player to town with the 5% gold penalty; on next Adventure the room regenerates with a fresh boss roll.
 
-### 4.3.1 Area-Cleared Reward Screen
+### 4.3.1 Gyms (Room 25)
+
+Defined in `src/data/gyms.ts`. Per-world canonical Gen 1 gym leader, roster ordered weakest → ace, and a themed encounter pool that overrides the regular `WORLD_ENCOUNTERS` pool for **rooms 20–24** of that world (so the run-up to a gym thematically previews the leader's type).
+
+| World | Gym | Leader | Roster (weakest → ace) | Type |
+|---|---|---|---|---|
+| 1 | Pewter | **Brock** | Geodude, Onix | Rock |
+| 2 | Cerulean | **Misty** | Staryu, Starmie | Water |
+| 3 | Vermilion | **Lt. Surge** | Voltorb, Pikachu, Raichu | Electric |
+| 4 | Celadon | **Erika** | Victreebel, Tangela, Vileplume | Grass |
+| 5 | Fuchsia | **Koga** | Koffing, Muk, Koffing, Weezing | Poison |
+| 6 | Saffron | **Sabrina** | Kadabra, Mr. Mime, Venomoth, Alakazam | Psychic |
+| 7 | Cinnabar | **Blaine** | Growlithe, Ponyta, Rapidash, Arcanine | Fire |
+| 8 | Viridian | **Giovanni** | Rhyhorn, Dugtrio, Nidoqueen, Nidoking, Rhydon | Ground |
+
+**Levels are player-relative.** The ace level matches the legacy boss-level formula (`getEncounterLevel(world, 24) + 3 + floor(world/2)`). Each grunt drops 2 levels from the ace, in canon roster order — so Brock's Geodude is `ace − 2`, Giovanni's Rhyhorn is `ace − 8`, etc. Canon team composition and ordering are preserved, but Brock isn't shipped at level 12 against a world 1 room 25 party.
+
+### 4.3.2 Area-Cleared Reward Screen
 
 When the player steps onto the exit tile of a **non-boss** room, `RoomClearScene` (area mode) runs the drop table:
 
@@ -451,7 +469,7 @@ Eggs are bought in town, stored on `GameState.eggs`, and decrement their `stepsR
 - **Gold tile pickups** scale with world index and are rolled during map generation
 - **Defeat penalty:** `floor(currentGold × 0.05)` — 5% of current gold on party wipe, then return to town (no auto-heal)
 
-**Room-clear drops** (`src/data/rewardDrops.ts`) — rolled independently when the reward screen opens. Regular rooms: 25% basic item, 5% decent item, 1% rare egg, 1% legendary egg (world 5+ only). Boss rooms: **guaranteed** decent item + 1% rare/legendary egg rolls. See §4.3.1 for the full drop pools.
+**Room-clear drops** (`src/data/rewardDrops.ts`) — rolled independently when the reward screen opens. Regular rooms: 25% basic item, 5% decent item, 1% rare egg, 1% legendary egg (world 5+ only). Boss rooms: **guaranteed** decent item + 1% rare/legendary egg rolls. See §4.3.2 for the full drop pools.
 
 ### 6.6 Leveling Curve
 
@@ -658,7 +676,6 @@ These ideas were in earlier drafts or are natural next steps — **none of them 
 
 - **Wild catching** — currently the only way to acquire new Pokemon is Buy Pokemon or Eggs. A classic catch flow (weaken → throw ball → catch rate roll) is a candidate for a future update. `catchRate` fields already exist on species data.
 - **Trainer battles** as a distinct room type with scripted teams and AI switching, separate from wild encounters.
-- **Gym Leader bosses per world** with signature moves and held items (current bosses are rare species, not themed leaders).
 - **Held items** (Charcoal, Leftovers, Focus Sash, Quick Claw, Scope Lens…) granting passive effects.
 - **Held items** (leftovers, eviolite, etc.) for passive battle effects.
 - **Research tasks** — ongoing objectives unlocking Pokemon or upgrades.

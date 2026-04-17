@@ -9,6 +9,7 @@ import { showToast } from "../ui/Toast.ts";
 import { describeItemResult } from "../ui/itemFeedback.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel, trackForWorld, trackForBattle } from "../data/worlds.ts";
+import { isGymLeadInRoom, isGymRoom, getGymForWorld, getGymRosterLevels, getRandomGymLeadInSpecies } from "../data/gyms.ts";
 import { EGG_TIERS, tickEggs, calculateHatchLevel } from "../data/eggs.ts";
 
 const GAME_W = 390;
@@ -575,8 +576,11 @@ export class MapScene extends Phaser.Scene {
     const level = getEncounterLevel(map.worldIndex, map.mapIndex);
     const partySize = getEnemyPartySize(map.worldIndex, map.mapIndex);
     const enemyParty: BattlePokemon[] = [];
+    const useGymPool = isGymLeadInRoom(map.mapIndex);
     for (let i = 0; i < partySize; i++) {
-      const speciesId = getRandomEncounterSpecies(map.worldIndex);
+      const speciesId = useGymPool
+        ? getRandomGymLeadInSpecies(map.worldIndex)
+        : getRandomEncounterSpecies(map.worldIndex);
       try {
         enemyParty.push(createBattlePokemon(getPokemon(speciesId), level));
       } catch {
@@ -604,6 +608,13 @@ export class MapScene extends Phaser.Scene {
   // === BOSS BATTLE ===
   private triggerBossBattle(): void {
     const map = this.gameState.currentMap!;
+
+    // Room 25 swaps the single boss for the world's gym roster.
+    if (isGymRoom(map.mapIndex)) {
+      this.triggerGymBattle();
+      return;
+    }
+
     const bossSpeciesId = getBossSpecies(map.worldIndex);
     const bossLevel = getBossLevel(map.worldIndex, map.mapIndex);
 
@@ -627,6 +638,36 @@ export class MapScene extends Phaser.Scene {
       labelColor: "#ff6666",
       labelSize: "28px",
       durationMs: 3000,
+    });
+  }
+
+  // === GYM BATTLE (room 25) ===
+  private triggerGymBattle(): void {
+    const map = this.gameState.currentMap!;
+    const gym = getGymForWorld(map.worldIndex);
+    const roster = getGymRosterLevels(map.worldIndex);
+
+    const enemyParty: BattlePokemon[] = roster.map(({ speciesId, level }) => {
+      try {
+        return createBattlePokemon(getPokemon(speciesId), level);
+      } catch {
+        return createBattlePokemon(getPokemon("snorlax"), level);
+      }
+    });
+
+    this.registry.set("gameState", this.gameState);
+    this.registry.set("enemyParty", enemyParty);
+    this.registry.set("isBossBattle", true);
+
+    MusicManager.play(trackForBattle(map.worldIndex, true));
+
+    this.playBattleTransition({
+      colorFlash: 0xff2222,
+      wipeColor: 0x220000,
+      label: `${gym.city} Gym — ${gym.leader}!`,
+      labelColor: "#ffd64a",
+      labelSize: "22px",
+      durationMs: 3200,
     });
   }
 

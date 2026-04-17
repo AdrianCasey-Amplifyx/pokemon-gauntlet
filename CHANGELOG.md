@@ -2,6 +2,11 @@
 
 All notable game changes are recorded here. Newest entries at the top. See `CLAUDE.md` → *Changelog Policy* for the format and rules.
 
+## 2026-04-18
+
+- **content:** Room 25 of every world is now a Gen 1-accurate gym battle (PRD 2026-04-17 §4.2). Pewter/Brock (Geodude, Onix), Cerulean/Misty (Staryu, Starmie), Vermilion/Lt. Surge (Voltorb, Pikachu, Raichu), Celadon/Erika (Victreebel, Tangela, Vileplume), Fuchsia/Koga (Koffing×2, Muk, Weezing), Saffron/Sabrina (Kadabra, Mr. Mime, Venomoth, Alakazam), Cinnabar/Blaine (Growlithe, Ponyta, Rapidash, Arcanine), Viridian/Giovanni (Rhyhorn, Dugtrio, Nidoqueen, Nidoking, Rhydon). Levels are player-relative — the ace lands on the legacy boss-level formula and grunts step down by 2 each, so the canon team composition + ordering is preserved without trivializing late-game runs. Pre-battle banner reads "{City} Gym — {Leader}!".
+- **content:** Encounter pool for rooms 20–24 of each world is overridden to the upcoming gym's themed type pool (PRD 2026-04-17 §4.2). Approaching Brock you'll fight rock-types only; approaching Misty, water-types; etc. New `src/data/gyms.ts` carries the gym table, themed pools, and level-scaling helper.
+
 ## 2026-04-17
 
 - **audio:** Battle tempos slowed in two passes — wild 185→132→96 BPM, boss 185→140→104 BPM, final 172→126→90 BPM. The RBY originals really are that fast, but paired with our note density it read as relentless noise across a multi-turn encounter; the slower pace gives each phrase room to breathe.

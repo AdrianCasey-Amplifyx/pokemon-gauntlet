@@ -37,6 +37,7 @@ src/
     pokedexEntries.ts        # One-sentence flavor description per Gen 1 species (Pokedex reveal content)
     stoneEvolutions.ts       # Stone → evolution lookup (Eevee branches, Raichu, Ninetales, etc)
     worlds.ts                # 8 worlds, encounter pools, scaling formulas, bosses
+    gyms.ts                  # Gen 1 gym rosters per world, themed lead-in encounter pool (rooms 20–24), level-scaled getGymRosterLevels
     eggs.ts                  # Egg tiers (common/rare/legendary), pools, hatch logic
     rewardDrops.ts           # Room-clear + trainer-defeat drop pools and roll helpers (legendary egg gated to world 5+)
   core/
