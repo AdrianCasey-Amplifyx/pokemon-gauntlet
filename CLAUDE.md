@@ -98,7 +98,7 @@ TitleScene → StarterSelectScene → MainMenuScene (town hub)
 - **Town:** Heal at PokeCenter (20g), buy items at PokeMart, buy previously-seen Pokemon (species must be encountered in battle first to unlock), buy eggs (common/rare/legendary) that hatch after N steps in dungeons, manage moves, select party of 3, enter adventure
 - **Adventure:** Single room per run. Find the exit in a fog-of-war grid. Random encounters based on world-specific Pokemon pools. Gold drops on floor tiles. `Repel` suppresses encounters for 20 steps; `Map` reveals the whole grid.
 - **Battle:** Cooldown-based moves (CD 0 = always available, CD 1-3 = wait that many turns). Speed determines turn order. XP awarded to alive party on enemy faint. Enemy parties can have multiple Pokemon, scaling with world/room.
-- **Progression:** 8 worlds × 25 rooms each. Boss rooms at 5/10/15/20/25 spawn a rare out-of-pool species at elevated level. Clearing a room heals party and advances progress. Defeat loses 15% gold and returns to town (no auto-heal).
+- **Progression:** 8 worlds × 25 rooms each. Boss rooms at 5/10/15/20/25 spawn a rare out-of-pool species at elevated level. Clearing a room heals party and advances progress. Defeat loses 5% gold and returns to town (no auto-heal).
 
 ## Combat System
 

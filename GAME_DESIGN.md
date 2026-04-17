@@ -53,13 +53,13 @@ Pokemon Gauntlet is a mobile-first, browser-based roguelike built with Phaser 3 
 └──────────────┬──────────────────────────────────────┘
                │ Win → back to Map
                │ Exit tile → party heal + advance room
-               │ All faint → lose 15% gold → back to Town
+               │ All faint → lose 5% gold → back to Town
                ▼
        (loop back to Main Menu or next room)
 ```
 
 **Win condition (aspirational):** Clear all 25 rooms of all 8 worlds.
-**Lose condition:** All three active party members faint. The run ends, player forfeits 15% of their current gold, and returns to town. No auto-heal on defeat.
+**Lose condition:** All three active party members faint. The run ends, player forfeits 5% of their current gold, and returns to town. No auto-heal on defeat.
 **Save:** Auto-saves at town checkpoints and after every cleared room. Mid-dungeon state is **not** preserved — quitting during a dungeon loses that run's progress.
 
 ### Scene flow
@@ -242,7 +242,7 @@ Tiles track `{ type, revealed, visited, encounterChance, goldDrop, exitDirection
 - **Gold** is picked up on step-on.
 - **Map item** reveals every tile immediately.
 - **Escape Rope** returns the party to town safely (no gold penalty).
-- **Party wipe** → lose 15% gold, return to town, party is not auto-healed.
+- **Party wipe** → lose 5% gold, return to town, party is not auto-healed.
 - **Bottom button row** has three buttons: **POKEMON** (opens the full roster view with HP, numeric XP, stats, and a PARTY marker on active members), **ITEMS** (inventory + egg progress), and **ESCAPE** (uses an Escape Rope). The Pokemon view mirrors the town's roster screen so XP progression can be tracked mid-run without leaving the dungeon.
 
 ---
@@ -423,7 +423,7 @@ Eggs are bought in town, stored on `GameState.eggs`, and decrement their `stepsR
 - **Gold** on win: `(15 + worldIndex * 12 + floor(mapIndex / 5) * 5) * enemyCount + rand(0..19)`
 - **XP** per defeated enemy: `enemyLevel * 6 + 10 + rand(0..7)` — awarded to every alive party member
 - **Gold tile pickups** scale with world index and are rolled during map generation
-- **Defeat penalty:** -15% current gold, return to town
+- **Defeat penalty:** `floor(currentGold × 0.05)` — 5% of current gold on party wipe, then return to town (no auto-heal)
 
 ### 6.6 Leveling Curve
 

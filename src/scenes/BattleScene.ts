@@ -349,7 +349,7 @@ export class BattleScene extends Phaser.Scene {
       if (this.isBossBattle) goldEarned = Math.floor(goldEarned * 3); // Boss bonus
       this.gameState.gold += goldEarned;
     } else {
-      goldLost = Math.floor(this.gameState.gold * 0.15);
+      goldLost = Math.floor(this.gameState.gold * 0.05);
       this.gameState.gold -= goldLost;
     }
 
