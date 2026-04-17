@@ -177,7 +177,29 @@ Moves carry a `{ type, chance }` effect object; the battle state machine rolls f
 - Items used in battle also cost your turn. Only ally-targeting items (Potion, Super Potion, Revive) are usable mid-battle.
 - XP is awarded to **every alive party member** when an enemy faints, not just the one that landed the KO. Fainted Pokemon earn nothing.
 
-### 3.8 Wild AI
+### 3.8 Move Animations
+
+Every damage-dealing hit plays a short procedural animation keyed off the move's type, drawn with Phaser primitives (circles, triangles, graphics paths, tweens) — no external assets. Phase-1 uses one animation per type, reused across every move of that type:
+
+| Type | Effect |
+|---|---|
+| Fire | Ember-style flame tongues rising from the target |
+| Water | Bubble arcs from attacker, splash on impact |
+| Electric | Two-fork bolt striking down onto the target |
+| Grass | Leaf crescents spiraling inward onto the target |
+| Rock / Ground | Boulder arc from attacker, dust puffs on landing |
+| Psychic | Magenta concentric rings rippling out |
+| Ice | Cyan shards radiating outward |
+| Poison | Purple pulse + drip globules below the target |
+| Bug | Scatter of small motes from attacker to target |
+| Ghost | Purple strobe pulse fading at the target |
+| Flying | White wind streaks sweeping past the target |
+| Dragon | Violet energy zigzag from attacker to target |
+| Normal / Fighting | Crisp white star + ring impact flash |
+
+Animations fire once per `damage` event, so multi-hit moves replay the animation per hit. Missed attacks, OHKO-failed, semi-invulnerable misses, and charge-turn 1 produce no animation (no damage emitted). Phase-2 per-move custom animations remain on the roadmap.
+
+### 3.9 Wild AI
 
 Simple, implemented in `src/core/wildAI.ts`:
 

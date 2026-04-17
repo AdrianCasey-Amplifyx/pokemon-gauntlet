@@ -1,8 +1,9 @@
 import Phaser from "phaser";
-import type { BattlePokemon, BattleItem, StatusType } from "../types.ts";
+import type { BattlePokemon, BattleItem, StatusType, PokemonType } from "../types.ts";
 import { HPBar } from "./HPBar.ts";
 import { MoveButton } from "./MoveButton.ts";
 import { TYPE_COLORS } from "./TypeColors.ts";
+import { playMoveAnimation } from "./MoveAnimations.ts";
 
 const GAME_W = 390;
 const GAME_H = 844;
@@ -354,6 +355,17 @@ export class BattleHUD {
   flashSprite(target: "player" | "enemy"): void {
     const sprite = target === "player" ? this.playerSprite : this.enemySprite;
     this.scene.tweens.add({ targets: sprite, alpha: 0.2, duration: 80, yoyo: true, repeat: 2 });
+  }
+
+  /**
+   * Phase-1 per-type move animation. Fires from the attacker sprite toward the
+   * defender sprite. Caller owns the type lookup (BattleScene tracks the last
+   * `move_used.moveType` per side so multi-hit damage replays the same anim).
+   */
+  playMoveAnimation(attacker: "player" | "enemy", type: PokemonType): void {
+    const from = attacker === "player" ? this.playerSprite : this.enemySprite;
+    const to = attacker === "player" ? this.enemySprite : this.playerSprite;
+    playMoveAnimation(this.scene, from.x, from.y, to.x, to.y, type);
   }
 
   // --- Party dots ---

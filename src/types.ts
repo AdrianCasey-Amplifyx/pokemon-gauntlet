@@ -204,6 +204,7 @@ export interface MoveUsedEvent extends BattleEvent {
   type: "move_used";
   actor: "player" | "enemy";
   moveName: string;
+  moveType: PokemonType;
   pokemonName: string;
 }
 

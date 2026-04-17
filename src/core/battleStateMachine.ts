@@ -358,6 +358,7 @@ export class BattleStateMachine {
           type: "move_used",
           actor: attackerSide,
           moveName: move.name,
+          moveType: move.type,
           pokemonName: attacker.species.name,
         } as MoveUsedEvent);
         events.push({
@@ -409,6 +410,7 @@ export class BattleStateMachine {
         type: "move_used",
         actor: attackerSide,
         moveName: move.name,
+        moveType: move.type,
         pokemonName: attacker.species.name,
       } as MoveUsedEvent);
       events.push({
@@ -428,6 +430,7 @@ export class BattleStateMachine {
         type: "move_used",
         actor: attackerSide,
         moveName: move.name,
+        moveType: move.type,
         pokemonName: attacker.species.name,
       } as MoveUsedEvent);
       events.push({
@@ -445,6 +448,7 @@ export class BattleStateMachine {
         type: "move_used",
         actor: attackerSide,
         moveName: move.name,
+        moveType: move.type,
         pokemonName: attacker.species.name,
       } as MoveUsedEvent);
       useMove(attacker, effectiveIndex);
@@ -485,6 +489,7 @@ export class BattleStateMachine {
       type: "move_used",
       actor: attackerSide,
       moveName: move.name,
+      moveType: move.type,
       pokemonName: attacker.species.name,
     } as MoveUsedEvent);
 

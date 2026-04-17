@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { AnyBattleEvent, BattlePokemon, GameState } from "../types.ts";
+import type { AnyBattleEvent, BattlePokemon, GameState, PokemonType } from "../types.ts";
 import { BattleStateMachine } from "../core/battleStateMachine.ts";
 import { BattleHUD } from "../ui/BattleHUD.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
@@ -18,6 +18,13 @@ export class BattleScene extends Phaser.Scene {
   private gameState!: GameState;
   private enemyCount = 0;
   private isBossBattle = false;
+  // Last move type emitted per side, consumed on the subsequent damage event
+  // so multi-hit attacks replay the same animation for each hit. Cleared on
+  // swap and battle-end so stale types can't leak across turns.
+  private pendingMoveType: { player: PokemonType | null; enemy: PokemonType | null } = {
+    player: null,
+    enemy: null,
+  };
 
   constructor() {
     super({ key: "BattleScene" });
@@ -142,6 +149,7 @@ export class BattleScene extends Phaser.Scene {
     switch (event.type) {
       case "move_used":
         this.hud.showMessage(`${event.pokemonName} used ${event.moveName}!`);
+        this.pendingMoveType[event.actor] = event.moveType;
         break;
 
       case "move_missed":
@@ -232,7 +240,9 @@ export class BattleScene extends Phaser.Scene {
         this.hud.showMessage("It had no effect — target was too strong!");
         break;
 
-      case "damage":
+      case "damage": {
+        const moveType = this.pendingMoveType[event.attacker];
+        if (moveType) this.hud.playMoveAnimation(event.attacker, moveType);
         this.hud.showDamageFloater(event.target, event.amount);
         this.hud.flashSprite(event.target);
         this.hud.showEffectiveness(event.effectiveness);
@@ -244,6 +254,7 @@ export class BattleScene extends Phaser.Scene {
         this.hud.updatePartyDots();
         this.hud.updateEnemyPartyDots();
         break;
+      }
 
       case "faint":
         this.hud.showMessage(`${event.pokemonName} fainted!`);
@@ -255,6 +266,7 @@ export class BattleScene extends Phaser.Scene {
         this.hud.showMessage(`${event.fromName}, come back! Go, ${event.toName}!`);
         this.hud.updateActivePokemon(this.battleSM.playerPokemon, this.battleSM.enemyPokemon);
         this.hud.updateMoveButtons(this.battleSM.playerPokemon);
+        this.pendingMoveType[event.actor] = null;
         break;
 
       case "item_used":
@@ -320,6 +332,8 @@ export class BattleScene extends Phaser.Scene {
         break;
 
       case "battle_end":
+        this.pendingMoveType.player = null;
+        this.pendingMoveType.enemy = null;
         this.time.delayedCall(800, () => this.handleBattleEnd(event.result));
         break;
     }

@@ -68,6 +68,7 @@ src/
     Toast.ts                 # Reusable fading-text confirmation toast (+ optional SFX)
     itemFeedback.ts          # ApplyResult -> {message, sfx, color} helper shared by MainMenu and MapScene
     FilterModal.ts           # Reusable type-picker overlay used by every list screen (roster/party/trader/train/pokedex)
+    MoveAnimations.ts        # Per-type procedural move animations (fire burst, water arc, forked bolt, ...) fired on damage events
   sprites/
     pokemonSprites.ts        # 151 pixel art sprites as palette + grid data
   audio/
