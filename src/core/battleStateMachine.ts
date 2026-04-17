@@ -17,6 +17,8 @@ import type {
   StatBoostEvent,
   StatusType,
   MoveMissedEvent,
+  MoveData,
+  BattleMoveState,
 } from "../types.ts";
 import { calculateDamage, stageMultiplier } from "./damageCalc.ts";
 import { useMove, tickCooldowns } from "./cooldownManager.ts";
@@ -34,6 +36,25 @@ export type BattlePhase =
 /** Reset a Pokemon's X-item stat stages to zero. */
 export function clearBoosts(p: BattlePokemon): void {
   p.battleBoosts = { atk: 0, def: 0, spd: 0, spc: 0 };
+}
+
+function getState(p: BattlePokemon): BattleMoveState {
+  if (!p.battleState) p.battleState = {};
+  return p.battleState;
+}
+
+/** Reset in-battle transient state (rollout streak, charge, leech seed, counter, etc). */
+function resetBattleState(p: BattlePokemon): void {
+  p.battleState = {};
+}
+
+/** Roll 2-5 multi-hit count per Gen 1 distribution (2/3 @ 37.5%, 4/5 @ 12.5%). */
+function rollMultiHit(rng: () => number): number {
+  const r = rng();
+  if (r < 0.375) return 2;
+  if (r < 0.75) return 3;
+  if (r < 0.875) return 4;
+  return 5;
 }
 
 export type BattleResult = "win" | "lose" | null;
@@ -90,21 +111,37 @@ export class BattleStateMachine {
 
   start(): void {
     this.phase = "PLAYER_CHOOSE_ACTION";
-    // Clear any stale X-item boosts from prior battles on the player's party
-    // (the same instances persist across battles; enemies are always fresh).
     for (const p of this.playerParty) {
       clearBoosts(p);
+      resetBattleState(p);
     }
-    // Track all enemy Pokemon as seen
     for (const p of this.enemyParty) {
+      resetBattleState(p);
       this.seenSpeciesIds.add(p.species.id);
     }
+  }
+
+  /** Expose any forced action the player is locked into (charging Solar Beam, emerging from Dig, or biding). */
+  getForcedPlayerMoveIndex(): number | null {
+    const s = this.playerPokemon.battleState;
+    if (!s) return null;
+    if (s.chargingMoveId) {
+      const idx = this.playerPokemon.moves.findIndex((m) => m.id === s.chargingMoveId);
+      return idx >= 0 ? idx : null;
+    }
+    if (s.bideTurnsLeft !== undefined) {
+      const idx = this.playerPokemon.moves.findIndex((m) => m.bide === true);
+      return idx >= 0 ? idx : null;
+    }
+    return null;
   }
 
   // --- Player submits an attack ---
   submitPlayerAttack(moveIndex: number): AnyBattleEvent[] {
     if (this.phase !== "PLAYER_CHOOSE_ACTION") return [];
-    const action: AttackAction = { type: "attack", actor: "player", moveIndex };
+    const forced = this.getForcedPlayerMoveIndex();
+    const effectiveIndex = forced !== null ? forced : moveIndex;
+    const action: AttackAction = { type: "attack", actor: "player", moveIndex: effectiveIndex };
     return this.resolveTurn(action);
   }
 
@@ -159,32 +196,32 @@ export class BattleStateMachine {
     this.phase = "RESOLVING";
     const events: AnyBattleEvent[] = [];
 
+    // Clear counter's "stored damage" buffer on both sides at the start of every
+    // turn — Counter only reflects damage taken within the same turn.
+    const pState = getState(this.playerPokemon);
+    const eState = getState(this.enemyPokemon);
+    pState.counterStored = 0;
+    eState.counterStored = 0;
+
     // Enemy always attacks
-    const enemyMoveIndex = chooseWildAction(
-      this.enemyPokemon,
-      this.playerPokemon,
-      this.rng
-    );
+    const enemyMoveIndex = this.getEnemyMoveIndex();
     const enemyAction: AttackAction = {
       type: "attack",
       actor: "enemy",
       moveIndex: enemyMoveIndex,
     };
 
-    // Swap and item actions always go first (before attacks)
-    // If player attacks, use speed to determine order
     if (playerAction.type === "swap") {
-      // Player swaps first, then enemy attacks
+      // Swapping in resets the swapped-out mon's rollout/charge/leech-seed state.
+      resetBattleState(this.playerPokemon);
       this.doSwap("player", playerAction.targetIndex, events);
       this.resolveAttack(enemyAction, events);
       this.handleFaintCascade(events);
     } else if (playerAction.type === "item") {
-      // Player uses item first, then enemy attacks
       this.doItem(playerAction, events);
       this.resolveAttack(enemyAction, events);
       this.handleFaintCascade(events);
     } else {
-      // Both attack — speed determines order (X Speed boost included)
       const playerSpeed = this.playerPokemon.stats.spd * stageMultiplier(this.playerPokemon.battleBoosts.spd);
       const enemySpeed = this.enemyPokemon.stats.spd * stageMultiplier(this.enemyPokemon.battleBoosts.spd);
 
@@ -214,17 +251,21 @@ export class BattleStateMachine {
       }
     }
 
-    // End-of-turn status damage (burn, poison)
+    // End-of-turn status + leech seed
     const phase1 = this.phase as BattlePhase;
     if (phase1 !== "BATTLE_END" && phase1 !== "PLAYER_FORCE_SWAP") {
       this.applyEndOfTurnStatus(this.playerPokemon, "player", events);
+      this.applyLeechSeedTick(this.playerPokemon, "player", events);
       if (!this.handleFaintCascade(events)) {
         this.applyEndOfTurnStatus(this.enemyPokemon, "enemy", events);
+        this.applyLeechSeedTick(this.enemyPokemon, "enemy", events);
         this.handleFaintCascade(events);
       }
+      // Decrement confusion counter on both sides
+      this.tickConfusion(this.playerPokemon);
+      this.tickConfusion(this.enemyPokemon);
     }
 
-    // Tick cooldowns if battle continues
     const p = this.phase as BattlePhase;
     if (p !== "BATTLE_END" && p !== "PLAYER_FORCE_SWAP") {
       tickCooldowns(this.playerPokemon);
@@ -236,68 +277,412 @@ export class BattleStateMachine {
     return events;
   }
 
+  private getEnemyMoveIndex(): number {
+    const forced = this.enemyPokemon.battleState;
+    if (forced?.chargingMoveId) {
+      const idx = this.enemyPokemon.moves.findIndex((m) => m.id === forced.chargingMoveId);
+      if (idx >= 0) return idx;
+    }
+    if (forced?.bideTurnsLeft !== undefined) {
+      const idx = this.enemyPokemon.moves.findIndex((m) => m.bide === true);
+      if (idx >= 0) return idx;
+    }
+    return chooseWildAction(this.enemyPokemon, this.playerPokemon, this.rng);
+  }
+
   private resolveAttack(action: AttackAction, events: AnyBattleEvent[]): void {
     const attacker = action.actor === "player" ? this.playerPokemon : this.enemyPokemon;
     const defender = action.actor === "player" ? this.enemyPokemon : this.playerPokemon;
+    const attackerSide = action.actor;
+    const defenderSide: "player" | "enemy" = action.actor === "player" ? "enemy" : "player";
 
     if (attacker.currentHP <= 0) return;
 
-    // Check for status-based skip (paralyze, sleep)
-    if (this.checkStatusSkip(attacker, action.actor, events)) {
-      return; // Turn lost
+    const aState = getState(attacker);
+    const dState = getState(defender);
+
+    // Flinch check — set by a previous mover's move this turn.
+    if (aState.flinched) {
+      aState.flinched = false;
+      events.push({
+        type: "flinched",
+        target: attackerSide,
+        pokemonName: attacker.species.name,
+      });
+      return;
     }
 
-    const move = attacker.moves[action.moveIndex];
-    useMove(attacker, action.moveIndex);
+    // Status-based skip (sleep / paralyze)
+    if (this.checkStatusSkip(attacker, attackerSide, events)) {
+      return;
+    }
 
+    // Confusion: decrement and possibly self-hit
+    if (aState.confusionTurnsLeft !== undefined && aState.confusionTurnsLeft > 0) {
+      if (this.rng() < 0.5) {
+        const selfHit = this.computeConfusionSelfHit(attacker);
+        attacker.currentHP = Math.max(0, attacker.currentHP - selfHit);
+        events.push({
+          type: "confusion_self_hit",
+          target: attackerSide,
+          amount: selfHit,
+          pokemonName: attacker.species.name,
+        });
+        return;
+      }
+    }
+
+    // Resolve the effective move — forced charging / biding override the picked index.
+    let effectiveIndex = action.moveIndex;
+    if (aState.chargingMoveId) {
+      const i = attacker.moves.findIndex((m) => m.id === aState.chargingMoveId);
+      if (i >= 0) effectiveIndex = i;
+    } else if (aState.bideTurnsLeft !== undefined) {
+      const i = attacker.moves.findIndex((m) => m.bide === true);
+      if (i >= 0) effectiveIndex = i;
+    }
+    const move = attacker.moves[effectiveIndex];
+    const isUnleashingChargedAttack = aState.chargingMoveId === move.id;
+    if (isUnleashingChargedAttack) {
+      aState.chargingMoveId = undefined;
+      aState.semiInvulnerable = false;
+    }
+
+    // --- Bide ---
+    if (move.bide) {
+      if (aState.bideTurnsLeft === undefined) {
+        // First turn of Bide
+        aState.bideTurnsLeft = 2;
+        aState.bideDamage = 0;
+        events.push({
+          type: "move_used",
+          actor: attackerSide,
+          moveName: move.name,
+          pokemonName: attacker.species.name,
+        } as MoveUsedEvent);
+        events.push({
+          type: "bide_storing",
+          actor: attackerSide,
+          pokemonName: attacker.species.name,
+        });
+        useMove(attacker, effectiveIndex);
+        return;
+      }
+      if (aState.bideTurnsLeft > 0) {
+        aState.bideTurnsLeft--;
+        events.push({
+          type: "bide_storing",
+          actor: attackerSide,
+          pokemonName: attacker.species.name,
+        });
+        return;
+      }
+      // Unleash
+      const amount = (aState.bideDamage ?? 0) * 2;
+      aState.bideTurnsLeft = undefined;
+      aState.bideDamage = undefined;
+      events.push({
+        type: "bide_unleash",
+        actor: attackerSide,
+        amount,
+        pokemonName: attacker.species.name,
+      });
+      if (amount > 0) {
+        defender.currentHP = Math.max(0, defender.currentHP - amount);
+        events.push({
+          type: "damage",
+          target: defenderSide,
+          amount,
+          effectiveness: 1,
+          isStab: false,
+          moveName: move.name,
+          attacker: attackerSide,
+        } as DamageEvent);
+      }
+      return;
+    }
+
+    // --- Charge (Solar Beam / Sky Attack) ---
+    if (move.charge && !isUnleashingChargedAttack) {
+      aState.chargingMoveId = move.id;
+      events.push({
+        type: "move_used",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      } as MoveUsedEvent);
+      events.push({
+        type: "move_charging",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      });
+      return;
+    }
+
+    // --- Semi-invulnerable (Dig / Fly) — turn 1 goes underground / sky ---
+    if (move.semiInvulnerable && !isUnleashingChargedAttack) {
+      aState.chargingMoveId = move.id;
+      aState.semiInvulnerable = true;
+      events.push({
+        type: "move_used",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      } as MoveUsedEvent);
+      events.push({
+        type: "move_charging",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      });
+      return;
+    }
+
+    // --- Counter ---
+    if (move.counter) {
+      events.push({
+        type: "move_used",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      } as MoveUsedEvent);
+      useMove(attacker, effectiveIndex);
+      const stored = aState.counterStored ?? 0;
+      aState.counterStored = 0;
+      if (stored > 0) {
+        const amount = stored * 2;
+        defender.currentHP = Math.max(0, defender.currentHP - amount);
+        events.push({
+          type: "counter_fired",
+          actor: attackerSide,
+          amount,
+          pokemonName: attacker.species.name,
+        });
+        events.push({
+          type: "damage",
+          target: defenderSide,
+          amount,
+          effectiveness: 1,
+          isStab: false,
+          moveName: move.name,
+          attacker: attackerSide,
+        } as DamageEvent);
+      } else {
+        events.push({
+          type: "move_missed",
+          actor: attackerSide,
+          moveName: move.name,
+          pokemonName: attacker.species.name,
+        } as MoveMissedEvent);
+      }
+      return;
+    }
+
+    // From here: regular attacking move (possibly an unleashed charge/semi-invuln).
+    useMove(attacker, effectiveIndex);
     events.push({
       type: "move_used",
-      actor: action.actor,
+      actor: attackerSide,
       moveName: move.name,
       pokemonName: attacker.species.name,
     } as MoveUsedEvent);
 
-    // Accuracy check. Moves with accuracy < 100 can miss — no damage, no status.
-    // Roll is independent of the damage-variance roll (which happens later in
-    // calculateDamage). accuracy: 100 always hits (no RNG consumed).
-    if (move.accuracy < 100 && this.rng() >= move.accuracy / 100) {
+    // Semi-invulnerable target — incoming attacks miss regardless of accuracy.
+    if (dState.semiInvulnerable) {
       events.push({
-        type: "move_missed",
-        actor: action.actor,
-        moveName: move.name,
-        pokemonName: attacker.species.name,
-      } as MoveMissedEvent);
+        type: "semi_invulnerable_miss",
+        actor: attackerSide,
+        pokemonName: defender.species.name,
+      });
+      if (move.rollout) aState.rolloutStreak = 0;
       return;
     }
 
-    const { damage, effectiveness, isStab } = calculateDamage(attacker, defender, move, this.rng);
-
-    if (damage > 0) {
-      defender.currentHP = Math.max(0, defender.currentHP - damage);
+    // --- OHKO (Horn Drill / Fissure) ---
+    if (move.ohko) {
+      if (defender.level > attacker.level) {
+        events.push({ type: "ohko_failed", target: defenderSide });
+        return;
+      }
+      // Accuracy still rolls (move.accuracy = 30).
+      if (this.rng() >= (move.accuracy / 100)) {
+        events.push({
+          type: "move_missed",
+          actor: attackerSide,
+          moveName: move.name,
+          pokemonName: attacker.species.name,
+        } as MoveMissedEvent);
+        return;
+      }
+      const killAmount = defender.currentHP;
+      defender.currentHP = 0;
+      events.push({ type: "ohko", target: defenderSide, pokemonName: defender.species.name });
       events.push({
         type: "damage",
-        target: action.actor === "player" ? "enemy" : "player",
-        amount: damage,
-        effectiveness,
-        isStab,
+        target: defenderSide,
+        amount: killAmount,
+        effectiveness: 1,
+        isStab: false,
         moveName: move.name,
-        attacker: action.actor,
+        attacker: attackerSide,
       } as DamageEvent);
+      return;
     }
 
-    // Try to apply status effect from the move
+    // Accuracy check (regular moves)
+    if (move.accuracy < 100 && this.rng() >= move.accuracy / 100) {
+      events.push({
+        type: "move_missed",
+        actor: attackerSide,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      } as MoveMissedEvent);
+      // Rollout misses reset the streak.
+      if (move.rollout) aState.rolloutStreak = 0;
+      return;
+    }
+
+    // --- Damage (with multi-hit, rollout, crit) ---
+    const hits = move.multiHit ? rollMultiHit(this.rng) : 1;
+    let totalDamage = 0;
+    let lastEffectiveness = 1;
+    let sawCrit = false;
+    for (let h = 0; h < hits; h++) {
+      const powerMult = move.rollout ? Math.pow(2, aState.rolloutStreak ?? 0) : 1;
+      const { damage, effectiveness, isStab, isCrit } = calculateDamage(
+        attacker,
+        defender,
+        move,
+        this.rng,
+        { powerMultiplier: powerMult }
+      );
+      lastEffectiveness = effectiveness;
+      if (damage > 0) {
+        defender.currentHP = Math.max(0, defender.currentHP - damage);
+        events.push({
+          type: "damage",
+          target: defenderSide,
+          amount: damage,
+          effectiveness,
+          isStab,
+          moveName: move.name,
+          attacker: attackerSide,
+        } as DamageEvent);
+        if (isCrit && !sawCrit) {
+          events.push({ type: "crit", target: defenderSide });
+          sawCrit = true;
+        }
+        totalDamage += damage;
+      }
+      if (defender.currentHP <= 0) break;
+    }
+    if (move.multiHit && hits > 1) {
+      events.push({ type: "multi_hit", target: defenderSide, hits });
+    }
+
+    // Rollout streak progression — only if this hit dealt damage.
+    if (move.rollout && totalDamage > 0) {
+      const newStreak = Math.min(4, (aState.rolloutStreak ?? 0) + 1);
+      aState.rolloutStreak = newStreak;
+      events.push({
+        type: "rollout_stack",
+        actor: attackerSide,
+        multiplier: Math.pow(2, newStreak),
+        pokemonName: attacker.species.name,
+      });
+    } else if (!move.rollout) {
+      aState.rolloutStreak = 0;
+    }
+
+    // Counter: physical damage received stored on defender for their next turn.
+    if (move.category === "physical" && totalDamage > 0) {
+      dState.counterStored = (dState.counterStored ?? 0) + totalDamage;
+    }
+
+    // Bide: defender accumulates received damage while biding.
+    if (dState.bideTurnsLeft !== undefined && totalDamage > 0) {
+      dState.bideDamage = (dState.bideDamage ?? 0) + totalDamage;
+    }
+
+    // Drain heal
+    if (move.drainRatio && totalDamage > 0 && attacker.currentHP > 0) {
+      const heal = Math.floor(totalDamage * move.drainRatio);
+      const actualHeal = Math.min(heal, attacker.maxHP - attacker.currentHP);
+      if (actualHeal > 0) {
+        attacker.currentHP += actualHeal;
+        events.push({
+          type: "drain_heal",
+          actor: attackerSide,
+          amount: actualHeal,
+          pokemonName: attacker.species.name,
+        });
+      }
+    }
+
+    // Recoil
+    if (move.recoilRatio && totalDamage > 0) {
+      const recoil = Math.max(1, Math.floor(totalDamage * move.recoilRatio));
+      attacker.currentHP = Math.max(0, attacker.currentHP - recoil);
+      events.push({
+        type: "recoil",
+        actor: attackerSide,
+        amount: recoil,
+        pokemonName: attacker.species.name,
+      });
+    }
+
+    // Leech Seed — plants on target.
+    if (move.leechSeed && !dState.leechSeededBy && defender.currentHP > 0) {
+      // Grass-type is immune to Leech Seed in canon.
+      if (!defender.species.types.includes("grass")) {
+        dState.leechSeededBy = attackerSide;
+        events.push({
+          type: "leech_seed_applied",
+          target: defenderSide,
+          pokemonName: defender.species.name,
+        });
+      }
+    }
+
+    // Flinch — only meaningful if target hasn't acted yet this turn.
+    if (move.flinchChance && totalDamage > 0 && this.rng() < move.flinchChance) {
+      dState.flinched = true;
+    }
+
+    // Non-damaging status moves (sleep powder, thunder wave, etc) and
+    // damaging moves with secondary effects (ember burn, thunderbolt para).
+    void lastEffectiveness;
     if (move.effect && defender.currentHP > 0) {
-      this.tryApplyStatus(move.effect.type, move.effect.chance, defender, action.actor === "player" ? "enemy" : "player", events);
+      this.tryApplyStatus(move.effect.type, move.effect.chance, defender, defenderSide, events);
+    }
+  }
+
+  private computeConfusionSelfHit(self: BattlePokemon): number {
+    // 40-power typeless physical against self's own defense.
+    const level = self.level;
+    const atk = self.stats.atk;
+    const def = self.stats.def;
+    const base = ((2 * level) / 5 + 2) * 40 * (atk / def) / 65 + 2;
+    return Math.max(1, Math.floor(base));
+  }
+
+  private tickConfusion(p: BattlePokemon): void {
+    const s = p.battleState;
+    if (!s) return;
+    if (s.confusionTurnsLeft !== undefined && s.confusionTurnsLeft > 0) {
+      s.confusionTurnsLeft--;
+      if (s.confusionTurnsLeft === 0) {
+        p.statusEffects = p.statusEffects.filter((st) => st !== "confuse");
+      }
     }
   }
 
   /** Check if a Pokemon's status prevents them from attacking. Returns true if skipped. */
   private checkStatusSkip(pokemon: BattlePokemon, actor: "player" | "enemy", events: AnyBattleEvent[]): boolean {
     if (pokemon.statusEffects.includes("sleep")) {
-      // 33% chance to wake up each turn
       if (this.rng() < 0.33) {
         pokemon.statusEffects = pokemon.statusEffects.filter((s) => s !== "sleep");
-        // They wake up but still lose this turn
       }
       events.push({
         type: "status_skip",
@@ -309,7 +694,6 @@ export class BattleStateMachine {
     }
 
     if (pokemon.statusEffects.includes("paralyze")) {
-      // 25% chance to be fully paralyzed
       if (this.rng() < 0.25) {
         events.push({
           type: "status_skip",
@@ -332,11 +716,14 @@ export class BattleStateMachine {
     targetSide: "player" | "enemy",
     events: AnyBattleEvent[]
   ): void {
-    // Don't stack the same status
     if (target.statusEffects.includes(status)) return;
 
     if (this.rng() < chance) {
       target.statusEffects.push(status);
+      if (status === "confuse") {
+        const s = getState(target);
+        s.confusionTurnsLeft = 1 + Math.floor(this.rng() * 4); // 1-4 turns Gen 1
+      }
       events.push({
         type: "status_applied",
         target: targetSide,
@@ -346,13 +733,11 @@ export class BattleStateMachine {
     }
   }
 
-  /** Apply end-of-turn status damage (burn, poison) */
   private applyEndOfTurnStatus(pokemon: BattlePokemon, side: "player" | "enemy", events: AnyBattleEvent[]): void {
     if (pokemon.currentHP <= 0) return;
 
     for (const status of pokemon.statusEffects) {
       if (status === "burn" || status === "poison") {
-        // Burn: 1/16 max HP, Poison: 1/8 max HP
         const fraction = status === "burn" ? 16 : 8;
         const damage = Math.max(1, Math.floor(pokemon.maxHP / fraction));
         pokemon.currentHP = Math.max(0, pokemon.currentHP - damage);
@@ -367,11 +752,42 @@ export class BattleStateMachine {
     }
   }
 
+  private applyLeechSeedTick(pokemon: BattlePokemon, side: "player" | "enemy", events: AnyBattleEvent[]): void {
+    if (pokemon.currentHP <= 0) return;
+    const s = pokemon.battleState;
+    if (!s?.leechSeededBy) return;
+    const drain = Math.max(1, Math.floor(pokemon.maxHP / 8));
+    pokemon.currentHP = Math.max(0, pokemon.currentHP - drain);
+    events.push({
+      type: "leech_seed_tick",
+      target: side,
+      drained: drain,
+      pokemonName: pokemon.species.name,
+    });
+    const seeder = s.leechSeededBy === "player" ? this.playerPokemon : this.enemyPokemon;
+    if (seeder && seeder.currentHP > 0) {
+      const heal = Math.min(drain, seeder.maxHP - seeder.currentHP);
+      if (heal > 0) {
+        seeder.currentHP += heal;
+        events.push({
+          type: "drain_heal",
+          actor: s.leechSeededBy,
+          amount: heal,
+          pokemonName: seeder.species.name,
+        });
+      }
+    }
+  }
+
   private doSwap(actor: "player" | "enemy", targetIndex: number, events: AnyBattleEvent[]): void {
     const party = actor === "player" ? this.playerParty : this.enemyParty;
     const oldIndex = actor === "player" ? this.playerActiveIndex : this.enemyActiveIndex;
     const fromName = party[oldIndex].species.name;
     const toName = party[targetIndex].species.name;
+
+    // Swapping out clears the outgoing mon's rollout/charge/leech-seed state —
+    // it's a fresh slate when they come back in.
+    resetBattleState(party[oldIndex]);
 
     if (actor === "player") {
       this.playerActiveIndex = targetIndex;
@@ -388,11 +804,9 @@ export class BattleStateMachine {
   }
 
   private doItem(action: TurnAction & { type: "item" }, events: AnyBattleEvent[]): void {
-    // Find and consume the item
     const beltEntry = this.playerItems.find((b) => b.item.id === action.itemId && b.quantity > 0);
     if (!beltEntry) return;
 
-    // Only medicine and battle items are usable in battle. Guard against UI bugs.
     const category = beltEntry.item.category;
     if (category !== "medicine" && category !== "battle") return;
 
@@ -431,16 +845,15 @@ export class BattleStateMachine {
    * Returns true if battle ended or a force swap is needed (halts further actions this turn).
    */
   private handleFaintCascade(events: AnyBattleEvent[]): boolean {
-    // Check enemy faint
     if (this.enemyPokemon.currentHP <= 0) {
       clearBoosts(this.enemyPokemon);
+      resetBattleState(this.enemyPokemon);
       events.push({
         type: "faint",
         target: "enemy",
         pokemonName: this.enemyPokemon.species.name,
       } as FaintEvent);
 
-      // Award XP to all alive party members
       const xp = xpFromEnemy(this.enemyPokemon.level);
       for (const p of this.playerParty) {
         if (p.currentHP > 0) {
@@ -464,10 +877,9 @@ export class BattleStateMachine {
       }
     }
 
-    // Check player faint
     if (this.playerPokemon.currentHP <= 0) {
-      // Fainting clears the mon's boosts — revive mid-battle still comes back clean.
       clearBoosts(this.playerPokemon);
+      resetBattleState(this.playerPokemon);
       events.push({
         type: "faint",
         target: "player",
@@ -478,11 +890,9 @@ export class BattleStateMachine {
         (p, i) => i !== this.playerActiveIndex && p.currentHP > 0
       );
       if (nextPlayer === -1) {
-        // All player Pokemon fainted — player loses
         this.endBattle("lose", events);
         return true;
       } else {
-        // Player must choose who to send in
         events.push({ type: "force_swap", actor: "player" } as ForceSwapEvent);
         this.phase = "PLAYER_FORCE_SWAP";
         return true;
@@ -493,11 +903,16 @@ export class BattleStateMachine {
   }
 
   private endBattle(result: "win" | "lose", events: AnyBattleEvent[]): void {
-    // Defense in depth: wipe every player mon's boosts at battle end so the
-    // next battle can't inherit them even if start() gets skipped somewhere.
-    for (const p of this.playerParty) clearBoosts(p);
+    for (const p of this.playerParty) {
+      clearBoosts(p);
+      resetBattleState(p);
+    }
+    for (const p of this.enemyParty) resetBattleState(p);
     events.push({ type: "battle_end", result } as BattleEndEvent);
     this.result = result;
     this.phase = "BATTLE_END";
   }
 }
+
+// Re-export for tests / consumers that want the type.
+export type { MoveData };

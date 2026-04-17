@@ -147,6 +147,90 @@ export class BattleScene extends Phaser.Scene {
         this.hud.showMessage(`${event.pokemonName}'s attack missed!`);
         break;
 
+      case "move_charging":
+        this.hud.showMessage(`${event.pokemonName} is charging ${event.moveName}...`);
+        break;
+
+      case "semi_invulnerable_miss":
+        this.hud.showMessage("The attack couldn't reach the target!");
+        break;
+
+      case "drain_heal":
+        this.hud.showMessage(`${event.pokemonName} drained ${event.amount} HP!`);
+        if (event.actor === "player") {
+          this.hud.updateHP("player", this.battleSM.playerPokemon.currentHP, this.battleSM.playerPokemon.maxHP);
+        } else {
+          this.hud.updateHP("enemy", this.battleSM.enemyPokemon.currentHP, this.battleSM.enemyPokemon.maxHP);
+        }
+        break;
+
+      case "leech_seed_applied":
+        this.hud.showMessage(`${event.pokemonName} was seeded!`);
+        break;
+
+      case "leech_seed_tick":
+        this.hud.showMessage(`Leech Seed drained ${event.drained} HP from ${event.pokemonName}.`);
+        if (event.target === "player") {
+          this.hud.updateHP("player", this.battleSM.playerPokemon.currentHP, this.battleSM.playerPokemon.maxHP);
+        } else {
+          this.hud.updateHP("enemy", this.battleSM.enemyPokemon.currentHP, this.battleSM.enemyPokemon.maxHP);
+        }
+        break;
+
+      case "flinched":
+        this.hud.showMessage(`${event.pokemonName} flinched and couldn't move!`);
+        break;
+
+      case "multi_hit":
+        this.hud.showMessage(`Hit ${event.hits} times!`);
+        break;
+
+      case "crit":
+        this.hud.showMessage("A critical hit!");
+        break;
+
+      case "recoil":
+        this.hud.showMessage(`${event.pokemonName} is hit with recoil!`);
+        if (event.actor === "player") {
+          this.hud.updateHP("player", this.battleSM.playerPokemon.currentHP, this.battleSM.playerPokemon.maxHP);
+        } else {
+          this.hud.updateHP("enemy", this.battleSM.enemyPokemon.currentHP, this.battleSM.enemyPokemon.maxHP);
+        }
+        break;
+
+      case "confusion_self_hit":
+        this.hud.showMessage(`${event.pokemonName} hurt itself in confusion!`);
+        if (event.target === "player") {
+          this.hud.updateHP("player", this.battleSM.playerPokemon.currentHP, this.battleSM.playerPokemon.maxHP);
+        } else {
+          this.hud.updateHP("enemy", this.battleSM.enemyPokemon.currentHP, this.battleSM.enemyPokemon.maxHP);
+        }
+        break;
+
+      case "bide_storing":
+        this.hud.showMessage(`${event.pokemonName} is storing energy...`);
+        break;
+
+      case "bide_unleash":
+        this.hud.showMessage(`${event.pokemonName} unleashed Bide for ${event.amount}!`);
+        break;
+
+      case "counter_fired":
+        this.hud.showMessage(`${event.pokemonName} countered for ${event.amount}!`);
+        break;
+
+      case "rollout_stack":
+        // Suppress repeated messages — only the damage events will be shown.
+        break;
+
+      case "ohko":
+        this.hud.showMessage(`One-hit KO on ${event.pokemonName}!`);
+        break;
+
+      case "ohko_failed":
+        this.hud.showMessage("It had no effect — target was too strong!");
+        break;
+
       case "damage":
         this.hud.showDamageFloater(event.target, event.amount);
         this.hud.flashSprite(event.target);
@@ -195,10 +279,16 @@ export class BattleScene extends Phaser.Scene {
       }
 
       case "status_applied": {
-        const statusNames: Record<string, string> = { burn: "burned", poison: "poisoned", paralyze: "paralyzed", sleep: "fell asleep" };
+        const statusNames: Record<string, string> = { burn: "burned", poison: "poisoned", paralyze: "paralyzed", sleep: "fell asleep", confuse: "confused" };
         const label = statusNames[event.status] ?? event.status;
         this.hud.showMessage(`${event.pokemonName} was ${label}!`);
-        this.hud.showStatusFloater(event.target, label.toUpperCase(), event.status === "burn" ? "#ff6622" : event.status === "poison" ? "#aa44cc" : event.status === "paralyze" ? "#ddcc22" : "#8888cc");
+        const color =
+          event.status === "burn" ? "#ff6622" :
+          event.status === "poison" ? "#aa44cc" :
+          event.status === "paralyze" ? "#ddcc22" :
+          event.status === "confuse" ? "#dd88ff" :
+          "#8888cc";
+        this.hud.showStatusFloater(event.target, label.toUpperCase(), color);
         this.hud.updateStatusDisplay(this.battleSM.playerPokemon, this.battleSM.enemyPokemon);
         break;
       }

@@ -120,6 +120,27 @@ damage = max(1, floor(damage))   (unless fully immune, in which case 0)
 
 **Accuracy & miss check.** Each move has an accuracy value (0–100). Before damage is calculated, a uniform `[0, 1)` roll compares against `accuracy / 100`; if it fails, the move **misses** — no damage, no status, no drain, and the move still burns its cooldown. Moves at 100% never roll (always hit). Values match Gen 1 Bulbapedia for Gen-1 moves (e.g. Horn Drill 30, Fissure 30, Hypnosis 60, Thunder 70, Hydro Pump 80, Fire Blast 85, Blizzard 90, Razor Leaf 95, Tackle 95) and canonical accuracy for later-gen moves the game uses.
 
+**Critical hits.** Base rate is `attacker.spd / 512` (so faster mons crit more often, roughly 6–15%). Moves tagged `highCrit` (Slash, Razor Leaf, Karate Chop, Crabhammer, Cross Chop) multiply that by 8 — high-crit rolls can reach 90%+ on fast attackers, matching the Gen-1 "always-crit" feel. A crit doubles the pre-roll damage.
+
+### 3.7 Move Mechanics
+
+Moves can carry one or more mechanic flags that change the normal damage-or-status flow:
+
+- **Drain** (`drainRatio = 0.5`) — Absorb, Mega Drain, Leech Life. Attacker heals half the damage dealt.
+- **Leech Seed** (`leechSeed`) — plants on target (grass-types immune). Each end-of-turn, drains `maxHP/8` from target and heals the seeder by the same. Persists until switch/faint.
+- **Flinch** (`flinchChance`) — Bite (10%), Stomp/Headbutt/Low Kick/Rolling Kick (30%). On hit, roll to mark the target `flinched`; if they haven't moved yet this turn, their action is skipped.
+- **Multi-hit** (`multiHit`) — Fury Attack, Comet Punch, Pin Missile, Double Kick, Twineedle, Bonemerang. Gen 1 distribution: 2 hits 37.5%, 3 hits 37.5%, 4 hits 12.5%, 5 hits 12.5%. Each hit rolls damage separately.
+- **Recoil** (`recoilRatio = 0.25`) — Take Down, Double-Edge, Submission. Attacker takes 25% of damage dealt as recoil.
+- **High crit** (`highCrit`) — 8× base crit rate. See §3.3.
+- **Semi-invulnerable** (`semiInvulnerable`) — Dig, Fly. Turn 1: go underground / fly up (attacks against the user miss). Turn 2: attack lands normally. User is locked into finishing the move.
+- **Charge** (`charge`) — Solar Beam, Sky Attack. Turn 1: charge (no attack). Turn 2: attack lands normally. User is locked in.
+- **OHKO** (`ohko`, power 0) — Horn Drill, Fissure. Fails outright if target level > user level. Otherwise rolls accuracy (30% base) and one-shots on hit.
+- **Counter** (`counter`) — returns 2× the **physical** damage received this turn. Emits `move_missed` if no physical damage was taken.
+- **Bide** (`bide`) — turn 1: start biding; turns 2-3: keep absorbing all damage; turn 4: unleash 2× the accumulated damage as typeless damage. User is locked into Bide for the full window.
+- **Rollout** (`rollout`) — each consecutive hit doubles the previous power. Caps at 5 hits (2×, 4×, 8×, 16×, 32×). Streak resets on miss, switch, or using any other move.
+
+Confusion is a status effect (not a move flag): 1-4 turns, 50% per-turn chance the confused mon hurts itself for a typeless 40-power physical instead of acting. Cleared automatically when the counter runs out.
+
 ### 3.4 Stat Formula
 
 Stats scale with level from species base stats (`src/core/statCalc.ts`):

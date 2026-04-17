@@ -272,4 +272,120 @@ describe("BattleStateMachine", () => {
       expect(battle.playerPokemon.battleBoosts.spd).toBe(0);
     }
   });
+
+  // --- Move mechanics (PRD §1.2) ---
+  it("drain moves heal the attacker for half the damage dealt", () => {
+    const rng = () => 0.5;
+    const player = makeParty(["venonat"]);
+    const enemy = makeParty(["rattata"]);
+    player[0].moves[0] = getMoveForTest("mega_drain");
+    player[0].cooldowns[0] = 0;
+    player[0].stats.spd = 999; // go first
+    player[0].currentHP = 5;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const drain = events.find((e) => e.type === "drain_heal" && e.actor === "player");
+    expect(drain).toBeDefined();
+  });
+
+  it("recoil moves damage the attacker after dealing damage", () => {
+    const rng = () => 0.5;
+    const player = makeParty(["tauros"]);
+    const enemy = makeParty(["eevee"]);
+    player[0].moves[0] = getMoveForTest("take_down");
+    player[0].cooldowns[0] = 0;
+    const preHP = player[0].currentHP;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const recoil = events.find((e) => e.type === "recoil" && e.actor === "player");
+    expect(recoil).toBeDefined();
+    expect(player[0].currentHP).toBeLessThan(preHP);
+  });
+
+  it("leech seed applies and ticks at end of turn", () => {
+    const rng = () => 0.1; // low rolls — accuracy passes (leech_seed is 90)
+    const player = makeParty(["bulbasaur"]);
+    const enemy = makeParty(["rattata"]); // non-grass, not immune
+    player[0].moves[0] = getMoveForTest("leech_seed");
+    player[0].cooldowns[0] = 0;
+    const preTargetHP = enemy[0].currentHP;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const applied = events.find((e) => e.type === "leech_seed_applied");
+    const tick = events.find((e) => e.type === "leech_seed_tick");
+    expect(applied).toBeDefined();
+    expect(tick).toBeDefined();
+    expect(enemy[0].currentHP).toBeLessThan(preTargetHP);
+  });
+
+  it("OHKO hits and kills outright when target is not higher level", () => {
+    const rng = () => 0.05; // under accuracy/100 = 0.30 → hits
+    const player = makeParty(["nidoking"]);
+    const enemy = makeParty(["squirtle"]);
+    // Ensure they're the same level so the OHKO level-gate passes
+    expect(player[0].level).toBe(enemy[0].level);
+    player[0].moves[0] = getMoveForTest("horn_drill");
+    player[0].cooldowns[0] = 0;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const ohko = events.find((e) => e.type === "ohko");
+    expect(ohko).toBeDefined();
+    expect(enemy[0].currentHP).toBe(0);
+  });
+
+  it("OHKO fails outright when target is higher level", () => {
+    const rng = () => 0.01; // would pass accuracy, but level-gate should fail first
+    const player = makeParty(["nidoking"]);
+    const enemy = makeParty(["squirtle"]);
+    player[0].moves[0] = getMoveForTest("horn_drill");
+    player[0].cooldowns[0] = 0;
+    enemy[0].level = player[0].level + 5;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const failed = events.find((e) => e.type === "ohko_failed");
+    expect(failed).toBeDefined();
+    expect(enemy[0].currentHP).toBeGreaterThan(0);
+  });
+
+  it("semi-invulnerable target (Dig turn 1) makes attacks miss", () => {
+    // Two consecutive Dig uses: turn 1 goes underground (no damage), turn 2 erupts.
+    const rng = () => 0.2;
+    const player = makeParty(["diglett"]);
+    const enemy = makeParty(["eevee"]);
+    player[0].moves[0] = getMoveForTest("dig");
+    player[0].cooldowns[0] = 0;
+    // Make player faster so they go first
+    player[0].stats.spd = 999;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const preEnemyHP = enemy[0].currentHP;
+    const turn1 = battle.submitPlayerAttack(0);
+    const charging = turn1.find((e) => e.type === "move_charging");
+    expect(charging).toBeDefined();
+    // Enemy tried to attack but player is semi-invulnerable (no damage to player from enemy)
+    const semiMiss = turn1.find((e) => e.type === "semi_invulnerable_miss");
+    expect(semiMiss).toBeDefined();
+    expect(enemy[0].currentHP).toBe(preEnemyHP);
+  });
+
+  it("multi-hit moves record a multi_hit event with 2-5 hits", () => {
+    // Force rng = 0.1 → rollMultiHit returns 2 (under 0.375).
+    const rng = () => 0.1;
+    const player = makeParty(["beedrill"]);
+    const enemy = makeParty(["bulbasaur"]);
+    player[0].moves[0] = getMoveForTest("fury_attack");
+    player[0].cooldowns[0] = 0;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const multi = events.find((e) => e.type === "multi_hit") as { type: "multi_hit"; hits: number } | undefined;
+    expect(multi).toBeDefined();
+    expect(multi!.hits).toBeGreaterThanOrEqual(2);
+    expect(multi!.hits).toBeLessThanOrEqual(5);
+  });
 });

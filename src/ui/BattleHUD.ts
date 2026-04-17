@@ -381,6 +381,7 @@ export class BattleHUD {
     poison: { text: "PSN", color: "#aa44cc" },
     paralyze: { text: "PAR", color: "#ddcc22" },
     sleep: { text: "SLP", color: "#8888cc" },
+    confuse: { text: "CNF", color: "#dd88ff" },
   };
 
   updateStatusDisplay(playerPokemon: BattlePokemon, enemyPokemon: BattlePokemon): void {
