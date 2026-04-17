@@ -628,9 +628,9 @@ The player picks up to **3 Pokemon** from the roster to form `playerParty` befor
   - **World 5 Saffron Tower** → corporate/tense E minor (155 BPM)
   - **World 6 Cinnabar Volcano** → decaying F minor (134 BPM)
   - **World 7 Indigo Plateau** → grand F major (146 BPM)
-  - **Battle (wild)** → lively C major (132 BPM) — non-boss fights on worlds 0–6
-  - **Battle (boss)** → intense E minor (140 BPM) — rooms 5 / 10 / 15 / 20 / 25 on worlds 0–6
-  - **Battle (final)** → climactic C minor (126 BPM) — every fight on World 7
+  - **Battle (wild)** → C major (96 BPM) — non-boss fights on worlds 0–6
+  - **Battle (boss)** → E minor (104 BPM) — rooms 5 / 10 / 15 / 20 / 25 on worlds 0–6
+  - **Battle (final)** → C minor (90 BPM) — every fight on World 7
   - Helpers `trackForWorld(worldIndex)` / `trackForBattle(worldIndex, isBoss)` in `src/data/worlds.ts` pick the right track per scene.
   - Compositions are original, authored in the keys / tempos / moods of the Pokemon R/B/Y pieces they evoke; see `docs/plans/2026-04-17-music-overhaul.md` for the full assignment rationale and source-score research.
 - **SFX:** short one-shot effects also synthesized via `MusicManager.playSFX(kind)`. Current presets: `purchase` (ca-ching B5→E6), `heal` (C-E-G rising chime), `item_use` (short click), `hatch` (C-E-G-C celebration arpeggio, also used for evolution), `learn` (E5→B5 ding), `error` (low A3→E3 descending). Reuses the master gain node of the current music track.

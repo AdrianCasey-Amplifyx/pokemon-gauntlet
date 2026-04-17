@@ -506,9 +506,9 @@ export const TRACKS: Record<Exclude<TrackId, "none">, TrackDef> = {
   world5: { bpm: 155, channels: [WORLD5_MELODY, WORLD5_BASS] },
   world6: { bpm: 134, channels: [WORLD6_MELODY, WORLD6_BASS] },
   world7: { bpm: 146, channels: [WORLD7_MELODY, WORLD7_BASS] },
-  battle_wild: { bpm: 132, channels: [BATTLE_WILD_MELODY, BATTLE_WILD_BASS] },
-  battle_boss: { bpm: 140, channels: [BATTLE_BOSS_MELODY, BATTLE_BOSS_BASS] },
-  battle_final: { bpm: 126, channels: [BATTLE_FINAL_MELODY, BATTLE_FINAL_BASS] },
+  battle_wild: { bpm: 96, channels: [BATTLE_WILD_MELODY, BATTLE_WILD_BASS] },
+  battle_boss: { bpm: 104, channels: [BATTLE_BOSS_MELODY, BATTLE_BOSS_BASS] },
+  battle_final: { bpm: 90, channels: [BATTLE_FINAL_MELODY, BATTLE_FINAL_BASS] },
 };
 
 // Map the 8 world indices to their assigned track ids. Exposed so
