@@ -83,7 +83,7 @@ export const MOVES: Record<string, MoveData> = {
   dig: { id: "dig", name: "Dig", type: "ground", power: 50, accuracy: 100, cooldown: 2, category: "physical", description: "Turn 1: digs underground. Turn 2: erupts for a strike.", semiInvulnerable: true },
   earthquake: { id: "earthquake", name: "Earthquake", type: "ground", power: 65, accuracy: 100, cooldown: 2, category: "physical", description: "A ground-shaking quake." },
   bone_club: { id: "bone_club", name: "Bone Club", type: "ground", power: 40, accuracy: 85, cooldown: 1, category: "physical", description: "Strikes with a bone." },
-  bonemerang: { id: "bonemerang", name: "Bonemerang", type: "ground", power: 25, accuracy: 90, cooldown: 2, category: "physical", description: "Throws a bone — hits twice.", multiHit: true },
+  bonemerang: { id: "bonemerang", name: "Bonemerang", type: "ground", power: 25, accuracy: 90, cooldown: 2, category: "physical", description: "Throws a bone — hits twice.", fixedHits: 2 },
   fissure: { id: "fissure", name: "Fissure", type: "ground", power: 0, accuracy: 30, cooldown: 3, category: "physical", description: "A one-hit KO if it lands.", ohko: true },
 
   // === PSYCHIC ===
@@ -105,7 +105,7 @@ export const MOVES: Record<string, MoveData> = {
   // === FIGHTING ===
   karate_chop: { id: "karate_chop", name: "Karate Chop", type: "fighting", power: 30, accuracy: 100, cooldown: 0, category: "physical", description: "A sharp chop. High crit ratio.", highCrit: true },
   low_kick: { id: "low_kick", name: "Low Kick", type: "fighting", power: 35, accuracy: 90, cooldown: 1, category: "physical", description: "A sweeping kick. May flinch.", flinchChance: 0.3 },
-  double_kick: { id: "double_kick", name: "Double Kick", type: "fighting", power: 15, accuracy: 100, cooldown: 1, category: "physical", description: "Kicks twice.", multiHit: true },
+  double_kick: { id: "double_kick", name: "Double Kick", type: "fighting", power: 15, accuracy: 100, cooldown: 1, category: "physical", description: "Kicks twice.", fixedHits: 2 },
   submission: { id: "submission", name: "Submission", type: "fighting", power: 50, accuracy: 80, cooldown: 2, category: "physical", description: "A body slam. 25% recoil.", recoilRatio: 0.25 },
   cross_chop: { id: "cross_chop", name: "Cross Chop", type: "fighting", power: 65, accuracy: 80, cooldown: 2, category: "physical", description: "A double chop. High crit ratio.", highCrit: true },
   hi_jump_kick: { id: "hi_jump_kick", name: "Hi Jump Kick", type: "fighting", power: 70, accuracy: 90, cooldown: 3, category: "physical", description: "A flying kick." },
@@ -128,7 +128,7 @@ export const MOVES: Record<string, MoveData> = {
   string_shot: { id: "string_shot", name: "String Shot", type: "bug", power: 0, accuracy: 95, cooldown: 2, category: "special", description: "Shoots sticky string." },
   leech_life: { id: "leech_life", name: "Leech Life", type: "bug", power: 25, accuracy: 100, cooldown: 0, category: "physical", description: "Drains HP — heals user for half the damage dealt.", drainRatio: 0.5 },
   pin_missile: { id: "pin_missile", name: "Pin Missile", type: "bug", power: 14, accuracy: 95, cooldown: 1, category: "physical", description: "Sharp pins fly — 2-5 hits.", multiHit: true },
-  twineedle: { id: "twineedle", name: "Twineedle", type: "bug", power: 25, accuracy: 100, cooldown: 1, category: "physical", description: "Stabs twice.", multiHit: true, effect: { type: "poison", chance: 0.2 } },
+  twineedle: { id: "twineedle", name: "Twineedle", type: "bug", power: 25, accuracy: 100, cooldown: 1, category: "physical", description: "Stabs twice. May poison.", fixedHits: 2, effect: { type: "poison", chance: 0.2 } },
   signal_beam: { id: "signal_beam", name: "Signal Beam", type: "bug", power: 50, accuracy: 100, cooldown: 2, category: "special", description: "A peculiar beam." },
   x_scissor: { id: "x_scissor", name: "X-Scissor", type: "bug", power: 55, accuracy: 100, cooldown: 2, category: "physical", description: "Slashes in an X." },
   megahorn: { id: "megahorn", name: "Megahorn", type: "bug", power: 70, accuracy: 85, cooldown: 3, category: "physical", description: "A massive horn charge." },

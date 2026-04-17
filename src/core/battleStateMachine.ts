@@ -544,11 +544,12 @@ export class BattleStateMachine {
     }
 
     // --- Damage (with multi-hit, rollout, crit) ---
-    const hits = move.multiHit ? rollMultiHit(this.rng) : 1;
+    const plannedHits = move.fixedHits ?? (move.multiHit ? rollMultiHit(this.rng) : 1);
     let totalDamage = 0;
+    let actualHits = 0;
     let lastEffectiveness = 1;
     let sawCrit = false;
-    for (let h = 0; h < hits; h++) {
+    for (let h = 0; h < plannedHits; h++) {
       const powerMult = move.rollout ? Math.pow(2, aState.rolloutStreak ?? 0) : 1;
       const { damage, effectiveness, isStab, isCrit } = calculateDamage(
         attacker,
@@ -574,11 +575,15 @@ export class BattleStateMachine {
           sawCrit = true;
         }
         totalDamage += damage;
+        actualHits++;
       }
       if (defender.currentHP <= 0) break;
     }
-    if (move.multiHit && hits > 1) {
-      events.push({ type: "multi_hit", target: defenderSide, hits });
+    // Only announce the multi-hit count when more than one hit actually landed;
+    // fainting early cuts the streak short, and a "Hit 4 times!" flash after a
+    // single-hit KO is misleading.
+    if ((move.multiHit || move.fixedHits) && actualHits > 1) {
+      events.push({ type: "multi_hit", target: defenderSide, hits: actualHits });
     }
 
     // Rollout streak progression — only if this hit dealt damage.

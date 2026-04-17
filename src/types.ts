@@ -45,6 +45,7 @@ export interface MoveData {
   ohko?: boolean;             // Horn Drill/Fissure — one-hit KO with level-gated accuracy
   flinchChance?: number;      // 0-1 chance to flinch target if user moved first
   multiHit?: boolean;         // 2-5 hits (Gen 1 distribution: 2/3 @ 3/8, 4/5 @ 1/8)
+  fixedHits?: number;         // always exactly this many hits (Twineedle, Bonemerang, Double Kick = 2)
   recoilRatio?: number;       // fraction of damage dealt taken back as recoil (0.25)
   highCrit?: boolean;         // 8× base crit rate (Slash, Razor Leaf, Karate Chop, Crabhammer)
 }

@@ -444,4 +444,21 @@ describe("BattleStateMachine", () => {
     expect(multi!.hits).toBeGreaterThanOrEqual(2);
     expect(multi!.hits).toBeLessThanOrEqual(5);
   });
+
+  it("Twineedle always hits exactly 2 times (fixedHits)", () => {
+    const rng = () => 0.5;
+    const player = makeParty(["beedrill"]);
+    const enemy = makeParty(["snorlax"]); // bulky — survives 2 Twineedles
+    player[0].moves[0] = getMoveForTest("twineedle");
+    player[0].cooldowns[0] = 0;
+    player[0].stats.spd = 999;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const damageHits = events.filter((e) => e.type === "damage" && e.attacker === "player");
+    expect(damageHits.length).toBe(2);
+    const multi = events.find((e) => e.type === "multi_hit") as { type: "multi_hit"; hits: number } | undefined;
+    expect(multi).toBeDefined();
+    expect(multi!.hits).toBe(2);
+  });
 });
