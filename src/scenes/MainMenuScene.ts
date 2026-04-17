@@ -1446,8 +1446,12 @@ export class MainMenuScene extends Phaser.Scene {
       const forgetBg = this.add.rectangle(GAME_W - 50, y, 55, 24, 0x663333).setOrigin(0.5).setStrokeStyle(1, 0x884444);
       this.add.text(GAME_W - 50, y, "FORGET", { fontSize: "9px", fontFamily: "monospace", color: "#ff6666", fontStyle: "bold" }).setOrigin(0.5);
 
-      // Don't allow forgetting if it's the last move
-      if (pokemon.moves.length > 1) {
+      // Guard rails: must always keep at least one move, and at least one CD-0 move.
+      const isLastMove = pokemon.moves.length <= 1;
+      const isLastCdZero = move.cooldown === 0 &&
+        pokemon.moves.filter((m, idx) => idx !== i && m.cooldown === 0).length === 0;
+
+      if (!isLastMove && !isLastCdZero) {
         forgetBg.setInteractive();
         forgetBg.on("pointerdown", () => {
           pokemon.moves.splice(i, 1);
@@ -1457,6 +1461,13 @@ export class MainMenuScene extends Phaser.Scene {
         });
       } else {
         forgetBg.setAlpha(0.3);
+        forgetBg.setInteractive();
+        forgetBg.on("pointerdown", () => {
+          const msg = isLastMove
+            ? "Must know at least one move."
+            : "Must keep at least one no-cooldown move.";
+          this.showToast(msg, { color: "#ff8888", sfx: "error" });
+        });
       }
     });
 
@@ -1625,12 +1636,25 @@ export class MainMenuScene extends Phaser.Scene {
         fontSize: "9px", fontFamily: "monospace", color: "#888888",
       }).setOrigin(0, 0.5);
 
-      const btn = this.add.rectangle(GAME_W - 55, y, 80, 32, 0x663333).setOrigin(0.5).setStrokeStyle(1, 0x884444);
+      // If the new move has a cooldown and we'd be replacing the last CD-0, block it.
+      const replacingLastCdZero = newMove.cooldown > 0 &&
+        move.cooldown === 0 &&
+        pokemon.moves.filter((m, idx) => idx !== i && m.cooldown === 0).length === 0;
+
+      const btnColor = replacingLastCdZero ? 0x443333 : 0x663333;
+      const btnStroke = replacingLastCdZero ? 0x554444 : 0x884444;
+      const labelColor = replacingLastCdZero ? "#663333" : "#ff8888";
+
+      const btn = this.add.rectangle(GAME_W - 55, y, 80, 32, btnColor).setOrigin(0.5).setStrokeStyle(1, btnStroke);
       this.add.text(GAME_W - 55, y, "FORGET", {
-        fontSize: "10px", fontFamily: "monospace", color: "#ff8888", fontStyle: "bold",
+        fontSize: "10px", fontFamily: "monospace", color: labelColor, fontStyle: "bold",
       }).setOrigin(0.5);
       btn.setInteractive();
       btn.on("pointerdown", () => {
+        if (replacingLastCdZero) {
+          this.showToast("Must keep at least one no-cooldown move.", { color: "#ff8888", sfx: "error" });
+          return;
+        }
         const forgotten = pokemon.moves[i].name;
         pokemon.moves[i] = newMove;
         pokemon.cooldowns[i] = 0;

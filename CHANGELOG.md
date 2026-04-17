@@ -2,6 +2,10 @@
 
 All notable game changes are recorded here. Newest entries at the top. See `CLAUDE.md` → *Changelog Policy* for the format and rules.
 
+## 2026-04-17
+
+- **ui:** Train screen now blocks forgetting the last no-cooldown move (PRD 2026-04-17 §1.4). Both the `FORGET` button on Current Moves and the TM forget-picker enforce `isLastCdZero`, with a tap on the disabled button surfacing the reason via toast so players aren't left guessing why the action is disabled.
+
 ## 2026-04-15
 
 - **bugfix:** **Modal click-through, take 4 — force-unregister input on every child before destroying.** Take 3 added interactive backdrops but they weren't enough on their own: when you hit BACK from a menu to the town hub and tapped in the void under the `ADVENTURE` button, a click still fired the button that used to sit at that position on the previous screen. Root cause: Phaser 3's input plugin has a one-tick lag when cleaning up destroyed interactive GameObjects — they linger in the hit-test list for a frame, so the next pointerdown can still dispatch to an old handler even after `this.children.removeAll(true)`. New `resetScreen` helper in `MainMenuScene` walks every child and calls `disableInteractive()` before `removeAll(true)` — that forces synchronous removal from the input plugin so the hit list is clean on the very next pointer event. Every screen rebuild in the scene (`buildUI`, `showScreen`, `showItemUseTarget`, `showEvolutionAnimation`, `drawTrainMoves`, `showTMForgetPicker`) now goes through it. Same pattern applied inline to `MapScene.buildMapUI`.
