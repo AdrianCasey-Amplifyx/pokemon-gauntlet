@@ -169,6 +169,21 @@ Rules:
 
 When you change a number (move power, cooldown, shop price, HP heal, encounter rate, etc.), update the matching table/section in `GAME_DESIGN.md` in the same commit.
 
+### PRD-driven batches (`docs/plans/YYYY-MM-DD-*.md`)
+
+When a dated PRD exists in `docs/plans/` and the current work is delivering items from it, treat the PRD as the source of truth for batch progress:
+
+1. **Find the active PRD first.** Before starting, `ls docs/plans/` and open the most recent dated PRD. If the user's request maps to items in it, you're doing PRD-driven work.
+2. **Tick items off in the PRD as you ship them.** Use GitHub-style checkboxes. The item heading stays as-is; add `✅` to the heading **and** flip any `- [ ]` bullets to `- [x]` as sub-items complete. Example: `### 1.4 Move deletion guard (TODO #14) ✅`. If a section is partially done, mark only the completed sub-items.
+3. **Cross-reference the CHANGELOG.** Each `CHANGELOG.md` bullet that delivers a PRD item must cite it by section number, e.g.:
+   `- **combat:** implement Bide / Counter / Rollout / drain mechanics (PRD 2026-04-17 §1.2).`
+   This makes the CHANGELOG → PRD mapping explicit without duplicating detail.
+4. **Update the PRD's Done-definition checklist** at the bottom of the document as each criterion is met.
+5. **Commit the PRD edit alongside the code change** for the item it tracks — same commit, so the progress marker and the delivering diff move together.
+6. **If scope changes mid-batch** (item dropped, split, or a new item added), edit the PRD to reflect reality and note the change in CHANGELOG under a `docs` bullet. Never silently drop a PRD item.
+
+Rule of thumb: at any point during a PRD batch, a reader should be able to open the PRD and see exactly what's done, what's in flight, and what's left — without needing to diff git history.
+
 ## Git & GitHub Policy
 
 The repo is hosted at **https://github.com/AdrianCasey-Amplifyx/pokemon-gauntlet** (public), default branch `main`.
