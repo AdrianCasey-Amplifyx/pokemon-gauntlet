@@ -11,29 +11,29 @@ interface SpriteData {
 const SPRITES: Record<string, SpriteData> = {
   bulbasaur: {
     palette: {
-      g: "#78C850", // green body
-      d: "#3A7840", // dark green bulb
-      b: "#58A848", // medium green
-      c: "#98D878", // light green
+      g: "#78C850", // main green body
+      d: "#3A7840", // dark green (bulb outline, feet)
+      b: "#5AA848", // medium green (bulb)
+      c: "#98D878", // light green (bulb highlight)
       e: "#C03028", // red eyes
-      k: "#282828", // dark
-      t: "#487848", // teal
+      k: "#282828", // mouth / dark accent
+      t: "#487848", // dark teal spots
     },
     grid: [
       "................",
-      "......dddd......",
-      ".....dddddd.....",
-      ".....dbddbd.....",
-      "....ddbccbdd....",
-      "....ddccccdd....",
-      ".....gggggg.....",
-      "....geggggeg....",
-      "....gggggggg....",
-      "....gggggggg....",
-      ".....gg..gg.....",
-      "....gg....gg....",
-      "....tt....tt....",
       "................",
+      "......dddd......",
+      ".....dbbbbd.....",
+      "....dbccccbd....",
+      "....dbbccbbd....",
+      "...gdbbbbbbdg...",
+      "..gggggggggggg..",
+      "..gggegggggegg..",
+      "..gggggkkggggg..",
+      "..gtggggggggtg..",
+      "..gggggggggggg..",
+      "..gg........gg..",
+      "..dd........dd..",
       "................",
       "................",
     ],
@@ -98,27 +98,27 @@ const SPRITES: Record<string, SpriteData> = {
     palette: {
       o: "#E87040", // orange body
       c: "#F8D8A8", // cream belly
-      e: "#282828", // eyes
-      r: "#D03028", // flame red
+      e: "#282828", // black eyes
+      r: "#E03020", // flame red
       y: "#F8E838", // flame yellow
-      d: "#C05830", // dark orange
+      d: "#B04830", // dark orange (outline / shading)
     },
     grid: [
       "................",
       "......oooo......",
       ".....oooooo.....",
       ".....oeooeo.....",
-      ".....oooooo.....",
+      ".....ooookoo....",
       "......oooo......",
-      "......odoo......",
-      ".....oocoo......",
-      "....oooccooo....",
-      "....oocccoo.....",
-      ".....oocoo..r...",
-      ".....oo.oo.ry...",
-      ".....o...o.y....",
-      "....oo...oo.....",
-      "....d.....d.....",
+      ".....oocooo.....",
+      "....ooocccoo....",
+      "....oocccccoo...",
+      "....oocccccooor.",
+      "....ooccccoooryr",
+      ".....oooooo.ryy.",
+      "....oo....oo.y..",
+      "...dd......dd...",
+      "................",
       "................",
     ],
   },
@@ -181,25 +181,26 @@ const SPRITES: Record<string, SpriteData> = {
   squirtle: {
     palette: {
       b: "#6890F0", // blue body
-      c: "#F8D8A8", // cream belly
-      s: "#B08830", // shell brown
-      d: "#4870C0", // dark blue
-      e: "#282828", // eyes
-      w: "#F0F0F0", // white
+      c: "#F8E0A8", // cream belly
+      s: "#B88840", // shell light brown
+      t: "#7A5020", // shell dark brown (rim)
+      d: "#4870C0", // dark blue (outline)
+      e: "#282828", // black eyes
+      w: "#F8F8F8", // white eye highlight
     },
     grid: [
       "................",
       "......bbbb......",
       ".....bbbbbb.....",
-      ".....bebbeb.....",
-      ".....bbwwbb.....",
+      ".....beebeeb....",
+      ".....bwbbwbb....",
       "......bbbb......",
-      "..sss.bbbb......",
-      ".ssssscccc......",
-      ".sssssccccb.....",
-      ".sssssccccb.....",
-      "..sss.bbbb......",
-      "......bb.b......",
+      "....ttssssst....",
+      "...tsbccccbst...",
+      "...tscccccbst...",
+      "...tscccccbst...",
+      "....tsccccbst...",
+      ".....tsbbbst....",
       ".....bb..bb.....",
       ".....dd..dd.....",
       "................",
@@ -265,28 +266,28 @@ const SPRITES: Record<string, SpriteData> = {
   caterpie: {
     palette: {
       g: "#78C850", // green body
-      y: "#F8E838", // yellow ring
-      e: "#282828", // eyes
-      r: "#C03028", // horn/antenna
-      d: "#488830", // dark green
+      y: "#F8E838", // yellow eye ring / tail tip
+      e: "#282828", // black pupils
+      r: "#C03028", // red antenna teardrop
+      d: "#488830", // dark green outline/shading
     },
     grid: [
       "................",
       "................",
-      "................",
-      "................",
+      "........r.......",
       ".......rr.......",
-      "......gggd......",
-      "......geged.....",
-      "......ggggd.....",
-      ".....yggggyd....",
-      "....gggggggd....",
-      "...ygggggggyd...",
-      "..ggggggggggd...",
-      "..yggggggggyd...",
-      "...gggggggdd....",
-      "................",
-      "................",
+      "......rrrr......",
+      ".....gggggg.....",
+      "....gggggggg....",
+      "....gyggggyg....",
+      "....geggggeg....",
+      "...gggggggggd...",
+      "..ggggggggggdd..",
+      "..dggggggggdd...",
+      "...dgggggggdd...",
+      "....dggggyyd....",
+      ".....ggyyy......",
+      ".......yy.......",
     ],
   },
   metapod: {
@@ -344,28 +345,28 @@ const SPRITES: Record<string, SpriteData> = {
   },
   weedle: {
     palette: {
-      b: "#C0A050", // brown body
-      d: "#886830", // dark brown
-      r: "#C03028", // horn/stinger
-      e: "#282828", // eyes
-      p: "#E8C080", // light tan
+      b: "#D8B878", // warm tan body
+      d: "#8A6838", // dark tan outline
+      r: "#E84028", // red horn / tail stinger
+      e: "#282828", // black eyes
+      p: "#F8D8A8", // cream underside / muzzle
     },
     grid: [
       "................",
-      "................",
-      "................",
-      ".......r........",
-      "......bbd.......",
-      "......bebed.....",
-      "......bbbbd.....",
-      ".....pbbbpd.....",
-      "....bbbbbbbd....",
-      "...pbbbbbbpd....",
-      "..bbbbbbbbbbd...",
-      "..pbbbbbbbbpd...",
-      "...bbbbbbbdd....",
       "........r.......",
-      "................",
+      ".......rr.......",
+      "......rrrr......",
+      ".....rrrrrr.....",
+      "....bbbbbbbb....",
+      "...bebbbbbeb....",
+      "...bbbbppbbb....",
+      "...bbbbbbbbb....",
+      "..bbbbbbbbbbbd..",
+      "..pbbbbbbbbbpd..",
+      "..bpppppppppbd..",
+      "..bbbbbbbbbbrr..",
+      "...dbbbbbbbbr...",
+      ".............r..",
       "................",
     ],
   },
@@ -3073,27 +3074,27 @@ const SPRITES: Record<string, SpriteData> = {
   horsea: {
     palette: {
       b: "#5898D8", // blue body
-      d: "#3868A8", // dark blue
-      c: "#80C0E0", // light blue
-      e: "#282828", // eyes
+      d: "#3868A8", // dark blue (shading, outline)
+      c: "#80C0E0", // light blue (fin, highlights)
+      e: "#282828", // black eye
     },
     grid: [
       "................",
-      "................",
-      "......bbbb......",
-      ".....bbbbbb.....",
-      ".....bebbbb.....",
-      ".....bbbbbb.....",
-      "......bbb.......",
-      "......bbb.......",
-      ".....bbbbb......",
+      ".....ccc........",
+      "....ccbbbb......",
       "....bbbbbbb.....",
-      ".....bbbbb......",
-      "......bbb.......",
-      ".......bb.......",
-      "......bbb.......",
-      "......bb........",
-      "................",
+      "...bbebbbbbbc...",
+      "...bbbbbbbbb....",
+      "....bbbbbbd.....",
+      "....dbbbb.......",
+      ".....bbbb.......",
+      "....bbbbd.......",
+      "...bbbbbd.......",
+      "..bbbbbbd.......",
+      ".bbbbbbd........",
+      "bbbbbd..........",
+      "dbbbd...........",
+      ".bbd............",
     ],
   },
   seadra: {

@@ -328,6 +328,17 @@ State is tracked via two `GameState` fields:
 
 Header shows running totals `Seen X/151   Caught Y/151`.
 
+#### Pokedex entry view
+
+Tapping any seen or caught card opens a full-screen Pokedex entry for that species:
+
+- Header: Dex number, name (or `???` for unseen — reserved for a future tap-unlocked silhouette flow), and `CAUGHT` / `SEEN` / `UNKNOWN` status badge.
+- Large framed portrait (140×140). Unseen species render as a black silhouette; seen-but-not-caught renders with a desaturated tint; caught renders full colour.
+- Type chips (once seen), plus a `Highest encountered: Lv N` line pulled from `seenPokemon`.
+- Base-stats panel: HP / Atk / Def / Spd / Spc rendered as mini-bars against a fixed 180-point scale (revealed on first sighting).
+- **Evolution chain:** the full line for the species is drawn as a row of small portraits with arrows between stages. Each stage shows its evolution requirement underneath (`Lv16`, `special item`, etc.). The stage currently being viewed is highlighted with a yellow border. Unseen stages render as `?` silhouette cells so the *shape* of the line is visible but the sprite and name stay hidden. Terminal split branches (Eevee → Vaporeon / Jolteon / Flareon) render as a vertical stack after the final arrow.
+- Flavor text (from `src/data/pokedexEntries.ts`) is shown only once the species has been caught; seen-only shows *"Catch this Pokemon to learn more."*
+
 ---
 
 ## 6. Economy & Shops

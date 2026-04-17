@@ -519,7 +519,7 @@ export class MainMenuScene extends Phaser.Scene {
       const cardBg = this.add.rectangle(x + w / 2, y + h / 2, w, h, cardColor).setOrigin(0.5).setStrokeStyle(1, strokeColor);
       if (isSeen) {
         cardBg.setInteractive();
-        cardBg.on("pointerdown", () => this.showPokemonDetail(species, { screen: "pokedex" }));
+        cardBg.on("pointerdown", () => this.showPokedexEntry(species));
       }
 
       // Dex number on the left
@@ -2256,6 +2256,261 @@ export class MainMenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
     backBg.setInteractive();
     backBg.on("pointerdown", () => this.showScreen(returnCtx.screen, false));
+  }
+
+  /**
+   * Dedicated Pokedex entry view. Richer than the generic detail screen:
+   * adds a large portrait, the full evolution chain (with any unseen
+   * stages rendered as silhouettes), a base-stats panel, the highest
+   * level encountered so far, and the flavor description (the latter
+   * only revealed once the species has been caught).
+   */
+  private showPokedexEntry(species: PokemonSpecies): void {
+    this.resetScreen();
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5).setInteractive();
+
+    const allSpecies = getAllPokemon();
+    const dexNum = allSpecies.findIndex((s) => s.id === species.id) + 1;
+    const seenLevel = this.gameState.seenPokemon[species.id];
+    const isCaught = this.gameState.caughtPokemon.includes(species.id);
+    const isSeen = isCaught || seenLevel !== undefined;
+
+    // Header: #NNN  NAME  STATUS
+    this.add.text(20, 22, `#${dexNum.toString().padStart(3, "0")}`, {
+      fontSize: "12px", fontFamily: "monospace", color: "#667788", fontStyle: "bold",
+    });
+    const nameText = isSeen ? species.name.toUpperCase() : "???";
+    this.add.text(GAME_W / 2, 24, nameText, {
+      fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5);
+    const statusText = isCaught ? "CAUGHT" : isSeen ? "SEEN" : "UNKNOWN";
+    const statusColor = isCaught ? "#66dd88" : isSeen ? "#8899aa" : "#444455";
+    this.add.text(GAME_W - 20, 22, statusText, {
+      fontSize: "11px", fontFamily: "monospace", color: statusColor, fontStyle: "bold",
+    }).setOrigin(1, 0);
+
+    // Large portrait (silhouette for unseen, faded tint for seen-but-not-caught)
+    const portraitY = 120;
+    this.add.rectangle(GAME_W / 2, portraitY, 160, 160, 0x16162a)
+      .setOrigin(0.5).setStrokeStyle(1, 0x2a2a44);
+    if (this.textures.exists(species.spriteKey)) {
+      const img = this.add.image(GAME_W / 2, portraitY, species.spriteKey)
+        .setDisplaySize(140, 140).setOrigin(0.5);
+      img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      if (!isSeen) img.setTint(0x000000);
+      else if (!isCaught) img.setTint(0x99aabb);
+    }
+
+    // Type chips (hidden until seen)
+    if (isSeen) {
+      const chipStart = GAME_W / 2 - (species.types.length - 1) * 40;
+      species.types.forEach((t, i) => {
+        const chipX = chipStart + i * 80;
+        this.add.rectangle(chipX, 212, 72, 20, TYPE_COLORS[t])
+          .setOrigin(0.5).setStrokeStyle(1, 0x222233);
+        this.add.text(chipX, 212, t.toUpperCase(), {
+          fontSize: "10px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        }).setOrigin(0.5);
+      });
+    }
+
+    // Encounter info line
+    const infoText = isSeen
+      ? `Highest encountered: Lv ${seenLevel ?? "?"}`
+      : "Not yet encountered.";
+    this.add.text(GAME_W / 2, 240, infoText, {
+      fontSize: "11px", fontFamily: "monospace",
+      color: isSeen ? "#aaccee" : "#556677",
+      fontStyle: "italic",
+    }).setOrigin(0.5);
+
+    let cursorY = 262;
+
+    // Base stats (only if seen)
+    if (isSeen) {
+      this.add.text(20, cursorY, "BASE STATS", {
+        fontSize: "11px", fontFamily: "monospace", color: "#8899aa", fontStyle: "bold",
+      });
+      cursorY += 16;
+      const rows: Array<{ label: string; key: keyof typeof species.baseStats }> = [
+        { label: "HP",  key: "hp" },
+        { label: "Atk", key: "atk" },
+        { label: "Def", key: "def" },
+        { label: "Spd", key: "spd" },
+        { label: "Spc", key: "spc" },
+      ];
+      const maxBase = 180;
+      rows.forEach((r, i) => {
+        const rowY = cursorY + i * 14;
+        const base = species.baseStats[r.key];
+        this.add.text(22, rowY, r.label, {
+          fontSize: "10px", fontFamily: "monospace", color: "#aaaacc",
+        });
+        const barX = 60, barW = 180;
+        this.add.rectangle(barX + barW / 2, rowY + 5, barW, 5, 0x222233).setOrigin(0.5);
+        const pct = Math.min(1, base / maxBase);
+        if (pct > 0) {
+          this.add.rectangle(barX, rowY + 3, barW * pct, 5, 0x66aacc).setOrigin(0, 0);
+        }
+        this.add.text(GAME_W - 25, rowY + 3, String(base), {
+          fontSize: "10px", fontFamily: "monospace", color: "#cccccc", fontStyle: "bold",
+        }).setOrigin(1, 0.5);
+      });
+      cursorY += rows.length * 14 + 8;
+    }
+
+    // Evolution chain
+    this.add.text(20, cursorY, "EVOLUTION", {
+      fontSize: "11px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold",
+    });
+    cursorY += 16;
+    this.drawPokedexEvoChain(species, cursorY);
+    cursorY += 76;
+
+    // Flavor text (revealed only on catch)
+    if (isCaught) {
+      const flavor = POKEDEX_ENTRIES[species.id] ?? "";
+      if (flavor) {
+        this.add.text(20, cursorY, flavor, {
+          fontSize: "11px", fontFamily: "monospace", color: "#aabbcc",
+          wordWrap: { width: GAME_W - 40 },
+        });
+      }
+    } else if (isSeen) {
+      this.add.text(GAME_W / 2, cursorY + 18, "Catch this Pokemon to learn more.", {
+        fontSize: "11px", fontFamily: "monospace", color: "#667788", fontStyle: "italic",
+      }).setOrigin(0.5);
+    } else {
+      this.add.text(GAME_W / 2, cursorY + 18, "No data on record.", {
+        fontSize: "11px", fontFamily: "monospace", color: "#555566", fontStyle: "italic",
+      }).setOrigin(0.5);
+    }
+
+    // Back
+    const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 45, 200, 38, 0x553333)
+      .setOrigin(0.5).setStrokeStyle(1, 0x774444);
+    this.add.text(GAME_W / 2, GAME_H - 45, "BACK", {
+      fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5);
+    backBg.setInteractive();
+    backBg.on("pointerdown", () => this.showScreen("pokedex", false));
+  }
+
+  /**
+   * Render the linear evolution chain for a species, plus any terminal
+   * split branches (Eevee → Vaporeon/Jolteon/Flareon) stacked vertically
+   * after the final arrow. Unseen species render as silhouettes so the
+   * player still sees the *shape* of the line without spoiling it.
+   */
+  private drawPokedexEvoChain(species: PokemonSpecies, startY: number): void {
+    // Walk back to the root of the evolution line.
+    let root = species;
+    const guard = new Set<string>();
+    while (root.evolvesFrom && !guard.has(root.id)) {
+      guard.add(root.id);
+      try {
+        root = getPokemon(root.evolvesFrom);
+      } catch { break; }
+    }
+
+    // Build linear chain, stopping at any split point.
+    const chain: Array<{ species: PokemonSpecies; requirement: string }> = [];
+    const push = (s: PokemonSpecies, req: string): void => {
+      chain.push({ species: s, requirement: req });
+      const kids = getAllPokemon().filter((p) => p.evolvesFrom === s.id);
+      if (kids.length === 1) {
+        const k = kids[0];
+        const r = k.evolutionStone
+          ? "special item"
+          : k.evolutionLevel ? `Lv${k.evolutionLevel}` : "";
+        push(k, r);
+      }
+    };
+    push(root, "");
+
+    const tail = chain[chain.length - 1];
+    const branches = getAllPokemon().filter((p) => p.evolvesFrom === tail.species.id);
+    const hasSplit = branches.length > 1;
+
+    // Layout metrics.
+    const cellW = 44, arrowW = 16, gap = 6;
+    const branchColW = hasSplit ? cellW + 20 : 0;
+    const totalW =
+      chain.length * cellW +
+      Math.max(0, chain.length - 1) * arrowW +
+      (hasSplit ? arrowW + branchColW : 0) +
+      gap * 2;
+    const startX = Math.max(10, (GAME_W - totalW) / 2);
+    const rowY = startY + 22;
+
+    const caught = new Set(this.gameState.caughtPokemon);
+    const seenMap = this.gameState.seenPokemon;
+    const isSeen = (id: string) => caught.has(id) || seenMap[id] !== undefined;
+
+    let cx = startX + cellW / 2;
+    chain.forEach((entry, i) => {
+      this.drawEvoCell(cx, rowY, entry.species, entry.requirement,
+        isSeen(entry.species.id), entry.species.id === species.id);
+      if (i < chain.length - 1) {
+        cx += cellW / 2;
+        this.add.text(cx + arrowW / 2, rowY, "→", {
+          fontSize: "16px", fontFamily: "monospace", color: "#8899aa",
+        }).setOrigin(0.5);
+        cx += arrowW + cellW / 2;
+      }
+    });
+
+    if (hasSplit) {
+      cx += cellW / 2;
+      this.add.text(cx + arrowW / 2, rowY, "→", {
+        fontSize: "16px", fontFamily: "monospace", color: "#8899aa",
+      }).setOrigin(0.5);
+      cx += arrowW + cellW / 2;
+      // Vertical stack of branches.
+      const spacing = branches.length === 2 ? 24 : 20;
+      const centerOffset = (branches.length - 1) / 2;
+      branches.forEach((b, bi) => {
+        const by = rowY + (bi - centerOffset) * spacing;
+        this.drawEvoCell(cx, by, b, "special item",
+          isSeen(b.id), b.id === species.id);
+      });
+    }
+  }
+
+  /**
+   * Single evolution-chain cell: portrait + optional requirement label
+   * below it. Highlight styling marks the species currently being viewed
+   * so the player can always see where they are in the line.
+   */
+  private drawEvoCell(
+    cx: number, cy: number,
+    sp: PokemonSpecies, requirement: string,
+    seen: boolean, highlight: boolean,
+  ): void {
+    const cellW = 40;
+    this.add.rectangle(cx, cy, cellW + 4, cellW + 4,
+      highlight ? 0x2a2a44 : 0x16162a)
+      .setOrigin(0.5)
+      .setStrokeStyle(1, highlight ? 0xf8d030 : 0x333355);
+
+    if (seen && this.textures.exists(sp.spriteKey)) {
+      const img = this.add.image(cx, cy, sp.spriteKey)
+        .setDisplaySize(cellW, cellW).setOrigin(0.5);
+      img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    } else {
+      this.add.rectangle(cx, cy, cellW, cellW, 0x1a1a26).setOrigin(0.5);
+      this.add.text(cx, cy, "?", {
+        fontSize: "18px", fontFamily: "monospace",
+        color: "#3a3a4a", fontStyle: "bold",
+      }).setOrigin(0.5);
+    }
+
+    if (requirement) {
+      this.add.text(cx, cy + cellW / 2 + 6, requirement, {
+        fontSize: "8px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5, 0);
+    }
   }
 
   private startAdventure(): void {
