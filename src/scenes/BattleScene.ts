@@ -4,6 +4,7 @@ import { BattleStateMachine } from "../core/battleStateMachine.ts";
 import { BattleHUD } from "../ui/BattleHUD.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 import { getBattleGoldReward } from "../data/items.ts";
+import { trackForBattle } from "../data/worlds.ts";
 import { saveGame } from "../core/saveManager.ts";
 
 const GAME_W = 390;
@@ -62,7 +63,7 @@ export class BattleScene extends Phaser.Scene {
       }
     );
 
-    MusicManager.play("battle");
+    MusicManager.play(trackForBattle(this.gameState.activeWorld, this.isBossBattle));
     this.hud.showMessage(this.isBossBattle ? "A powerful Boss appeared!" : "A wild Pokemon appeared!");
     this.hud.setMovesEnabled(false);
 

@@ -105,3 +105,23 @@ export function getBossLevel(worldIndex: number, mapIndex: number): number {
   const baseLevel = getEncounterLevel(worldIndex, mapIndex);
   return baseLevel + 3 + Math.floor(worldIndex / 2);
 }
+
+// --- Music selection ---
+
+import type { TrackId } from "../audio/tracks.ts";
+import { WORLD_TRACKS } from "../audio/tracks.ts";
+
+/** Music track id for the MapScene of a given world. */
+export function trackForWorld(worldIndex: number): TrackId {
+  return WORLD_TRACKS[worldIndex] ?? WORLD_TRACKS[0];
+}
+
+/**
+ * Music track id for a battle. World 7 (Indigo Plateau) uses the
+ * dedicated climactic theme for every fight; elsewhere, boss rooms
+ * swap to the intense variant and regular rooms use the wild theme.
+ */
+export function trackForBattle(worldIndex: number, isBoss: boolean): TrackId {
+  if (worldIndex >= 7) return "battle_final";
+  return isBoss ? "battle_boss" : "battle_wild";
+}

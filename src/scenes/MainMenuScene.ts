@@ -86,7 +86,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.typeFilter = null;
     this.shopTab = "medicine";
     this.itemsTab = "medicine";
-    MusicManager.play("map");
+    MusicManager.play("town");
 
     this.gameState = this.registry.get("gameState") as GameState;
 

@@ -616,7 +616,23 @@ The player picks up to **3 Pokemon** from the roster to form `playerParty` befor
 
 - **Sprites:** 16×16 pixel art for all 151 Pokemon, each defined as a palette + grid in `src/sprites/pokemonSprites.ts` and rendered to Phaser textures during `PreloadScene`. Nearest-neighbor filtering; no external PNGs.
 - **UI:** monospace text, flat rectangles, type-colored accents (`src/ui/TypeColors.ts` maps all 15 types to hex colors).
-- **Music:** procedural Web Audio via `src/audio/MusicManager.ts`. Distinct loops for map exploration and battles. No audio files.
+- **Music:** procedural Web Audio via `src/audio/MusicManager.ts`, track data in `src/audio/tracks.ts`. 14 distinct tracks, each a `{ bpm, channels[] }` definition scheduled on Web Audio oscillators at runtime — 2 channels per track (square-lead melody + triangle / sawtooth bass), channels loop independently so different-length phrases still line up. No audio files. Track assignments:
+  - **Title** → brassy C-major fanfare (134 BPM)
+  - **Starter select** → curious A-major "lab" theme (138 BPM)
+  - **Town hub** → cheerful E-major loop (134 BPM)
+  - **World 0 Viridian Path** → pastoral D major (127 BPM)
+  - **World 1 Mt. Moon Depths** → cavernous A minor (120 BPM)
+  - **World 2 Cerulean Caves** → flowing E major (127 BPM)
+  - **World 3 Vermilion Docks** → elegant 6/8-feel A major (150 BPM)
+  - **World 4 Celadon Gardens** → urban-cheer G major (134 BPM)
+  - **World 5 Saffron Tower** → corporate/tense E minor (155 BPM)
+  - **World 6 Cinnabar Volcano** → decaying F minor (134 BPM)
+  - **World 7 Indigo Plateau** → grand F major (146 BPM)
+  - **Battle (wild)** → frantic C major (185 BPM) — non-boss fights on worlds 0–6
+  - **Battle (boss)** → intense E minor (185 BPM) — rooms 5 / 10 / 15 / 20 / 25 on worlds 0–6
+  - **Battle (final)** → climactic C minor (172 BPM) — every fight on World 7
+  - Helpers `trackForWorld(worldIndex)` / `trackForBattle(worldIndex, isBoss)` in `src/data/worlds.ts` pick the right track per scene.
+  - Compositions are original, authored in the keys / tempos / moods of the Pokemon R/B/Y pieces they evoke; see `docs/plans/2026-04-17-music-overhaul.md` for the full assignment rationale and source-score research.
 - **SFX:** short one-shot effects also synthesized via `MusicManager.playSFX(kind)`. Current presets: `purchase` (ca-ching B5→E6), `heal` (C-E-G rising chime), `item_use` (short click), `hatch` (C-E-G-C celebration arpeggio, also used for evolution), `learn` (E5→B5 ding), `error` (low A3→E3 descending). Reuses the master gain node of the current music track.
 - **Confirmation toasts:** reusable `src/ui/Toast.ts` shows a fading yellow-by-default message near the bottom of the screen (~1 s hold + 1.8 s fade). Used for every purchase (PokeMart, Buy Pokemon, Egg Shop), every PokeCenter heal, every move learned, every field item use (Map, Repel, medicine/vitamin/stone/rare candy), and every error/denial (not enough gold, "only usable in battle", etc.). Item-apply messages are generated from the `applyItem` result via `src/ui/itemFeedback.ts` so MainMenu and MapScene share the same vocabulary ("Charizard restored 30 HP!", "Pikachu grew to Lv14!", "Eevee's Attack rose by 3!"). Evolution and egg-hatch full-screen overlays also trigger the `hatch` SFX.
 

@@ -1,54 +1,35 @@
-// Procedural music using Web Audio API
-// No external audio files needed
+// Procedural music using Web Audio API.
+//
+// Track definitions live in `./tracks.ts` — each track is a list of
+// channels (melody / bass / etc.) with its own BPM. At play time the
+// manager spawns one self-scheduling timer per channel, each looping
+// its own `notes[]` independently, so channels of different lengths
+// still line up over the long run (Game Boy style). No sampled audio
+// is ever loaded.
 
-type Track = "map" | "battle" | "none";
+import { TRACKS, type TrackId } from "./tracks.ts";
 
-// Note frequencies (Hz)
+// Note frequencies covering the range used across all tracks
+// (A2 through C6, enharmonic spellings aliased).
 const NOTES: Record<string, number> = {
-  C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
-  C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
-  C5: 523.25, D5: 587.33, E5: 659.25, G5: 783.99,
+  // Octave 2
+  A2: 110.00, "A#2": 116.54, Bb2: 116.54, B2: 123.47,
+  // Octave 3
+  C3: 130.81, "C#3": 138.59, Db3: 138.59, D3: 146.83, "D#3": 155.56, Eb3: 155.56,
+  E3: 164.81, F3: 174.61, "F#3": 185.00, Gb3: 185.00, G3: 196.00, "G#3": 207.65, Ab3: 207.65,
+  A3: 220.00, "A#3": 233.08, Bb3: 233.08, B3: 246.94,
+  // Octave 4
+  C4: 261.63, "C#4": 277.18, Db4: 277.18, D4: 293.66, "D#4": 311.13, Eb4: 311.13,
+  E4: 329.63, F4: 349.23, "F#4": 369.99, Gb4: 369.99, G4: 392.00, "G#4": 415.30, Ab4: 415.30,
+  A4: 440.00, "A#4": 466.16, Bb4: 466.16, B4: 493.88,
+  // Octave 5
+  C5: 523.25, "C#5": 554.37, Db5: 554.37, D5: 587.33, "D#5": 622.25, Eb5: 622.25,
+  E5: 659.25, F5: 698.46, "F#5": 739.99, Gb5: 739.99, G5: 783.99, "G#5": 830.61, Ab5: 830.61,
+  A5: 880.00, "A#5": 932.33, Bb5: 932.33, B5: 987.77,
+  // Octave 6
+  C6: 1046.50, "C#6": 1108.73, Db6: 1108.73, D6: 1174.66, "D#6": 1244.51, Eb6: 1244.51,
+  E6: 1318.51, F6: 1396.91,
 };
-
-// Map theme: calm, peaceful melody in C major
-const MAP_MELODY: { note: string; dur: number }[] = [
-  { note: "E4", dur: 0.4 }, { note: "G4", dur: 0.4 }, { note: "C5", dur: 0.6 },
-  { note: "B4", dur: 0.3 }, { note: "A4", dur: 0.5 },
-  { note: "G4", dur: 0.4 }, { note: "E4", dur: 0.4 }, { note: "D4", dur: 0.6 },
-  { note: "C4", dur: 0.3 }, { note: "E4", dur: 0.5 },
-  { note: "G4", dur: 0.4 }, { note: "A4", dur: 0.4 }, { note: "G4", dur: 0.6 },
-  { note: "E4", dur: 0.3 }, { note: "D4", dur: 0.5 },
-  { note: "C4", dur: 0.4 }, { note: "D4", dur: 0.4 }, { note: "E4", dur: 0.8 },
-];
-
-// Map bass line
-const MAP_BASS: { note: string; dur: number }[] = [
-  { note: "C3", dur: 1.2 }, { note: "A3", dur: 1.0 },
-  { note: "F3", dur: 1.2 }, { note: "G3", dur: 1.0 },
-  { note: "C3", dur: 1.2 }, { note: "G3", dur: 1.0 },
-  { note: "A3", dur: 1.2 }, { note: "G3", dur: 1.0 },
-];
-
-// Battle theme: fast, intense in A minor
-const BATTLE_MELODY: { note: string; dur: number }[] = [
-  { note: "A4", dur: 0.15 }, { note: "C5", dur: 0.15 }, { note: "E5", dur: 0.2 },
-  { note: "A4", dur: 0.15 }, { note: "C5", dur: 0.15 }, { note: "D5", dur: 0.2 },
-  { note: "E5", dur: 0.15 }, { note: "D5", dur: 0.15 }, { note: "C5", dur: 0.2 },
-  { note: "A4", dur: 0.15 }, { note: "B4", dur: 0.15 }, { note: "C5", dur: 0.3 },
-  { note: "E4", dur: 0.15 }, { note: "A4", dur: 0.15 }, { note: "G4", dur: 0.2 },
-  { note: "A4", dur: 0.15 }, { note: "E4", dur: 0.15 }, { note: "G4", dur: 0.2 },
-  { note: "A4", dur: 0.15 }, { note: "C5", dur: 0.15 }, { note: "B4", dur: 0.3 },
-  { note: "A4", dur: 0.2 }, { note: "G4", dur: 0.2 }, { note: "E4", dur: 0.3 },
-];
-
-const BATTLE_BASS: { note: string; dur: number }[] = [
-  { note: "A3", dur: 0.2 }, { note: "A3", dur: 0.2 }, { note: "E3", dur: 0.2 },
-  { note: "A3", dur: 0.2 }, { note: "D3", dur: 0.2 }, { note: "D3", dur: 0.2 },
-  { note: "E3", dur: 0.2 }, { note: "E3", dur: 0.2 },
-  { note: "A3", dur: 0.2 }, { note: "A3", dur: 0.2 }, { note: "G3", dur: 0.2 },
-  { note: "E3", dur: 0.2 }, { note: "F3", dur: 0.2 }, { note: "F3", dur: 0.2 },
-  { note: "E3", dur: 0.2 }, { note: "E3", dur: 0.2 },
-];
 
 // One-shot sound effects. Each preset is a sequence of notes played in
 // sequence (via `delay` in ms from trigger time) with short envelopes.
@@ -104,12 +85,14 @@ const SFX_PRESETS: Record<SFXKind, SFXNote[]> = {
   ],
 };
 
+// Re-export so callers only import one module.
+export type { TrackId } from "./tracks.ts";
+
 class MusicManagerClass {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private currentTrack: Track = "none";
-  private melodyTimer: number | null = null;
-  private bassTimer: number | null = null;
+  private currentTrack: TrackId = "none";
+  private channelTimers: number[] = [];
   private activeOscillators: OscillatorNode[] = [];
   private volume = 0.15;
   private started = false;
@@ -127,74 +110,74 @@ class MusicManagerClass {
     return this.ctx;
   }
 
-  play(track: Track): void {
+  play(track: TrackId): void {
     if (track === this.currentTrack) return;
     this.stop();
     this.currentTrack = track;
     this.started = true;
 
-    if (track === "map") {
-      this.loopSequence(MAP_MELODY, "triangle", 0.12, "melody");
-      this.loopSequence(MAP_BASS, "sine", 0.08, "bass");
-    } else if (track === "battle") {
-      this.loopSequence(BATTLE_MELODY, "square", 0.08, "melody");
-      this.loopSequence(BATTLE_BASS, "sawtooth", 0.06, "bass");
+    if (track === "none") return;
+    const def = TRACKS[track];
+    if (!def) return;
+
+    const secondsPerBeat = 60 / def.bpm;
+    for (const channel of def.channels) {
+      this.loopChannel(channel, secondsPerBeat);
     }
   }
 
   stop(): void {
     this.currentTrack = "none";
-    if (this.melodyTimer !== null) { clearTimeout(this.melodyTimer); this.melodyTimer = null; }
-    if (this.bassTimer !== null) { clearTimeout(this.bassTimer); this.bassTimer = null; }
+    for (const id of this.channelTimers) clearTimeout(id);
+    this.channelTimers = [];
     for (const osc of this.activeOscillators) {
       try { osc.stop(); } catch { /* already stopped */ }
     }
     this.activeOscillators = [];
   }
 
-  private loopSequence(
-    seq: { note: string; dur: number }[],
-    wave: OscillatorType,
-    vol: number,
-    kind: "melody" | "bass"
+  private loopChannel(
+    channel: { wave: OscillatorType; volume: number; notes: Array<{ note: string | null; beats: number }> },
+    secondsPerBeat: number
   ): void {
     const ctx = this.ensureContext();
     let idx = 0;
 
     const playNext = () => {
       if (this.currentTrack === "none") return;
+      if (!this.masterGain) return;
 
-      const { note, dur } = seq[idx % seq.length];
-      const freq = NOTES[note];
-      if (!freq || !this.masterGain) return;
+      const step = channel.notes[idx % channel.notes.length];
+      const dur = step.beats * secondsPerBeat;
 
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      if (step.note !== null) {
+        const freq = NOTES[step.note];
+        if (freq !== undefined) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = channel.wave;
+          osc.frequency.value = freq;
 
-      osc.type = wave;
-      osc.frequency.value = freq;
+          // Gentle attack / release envelope so notes don't click.
+          gain.gain.setValueAtTime(0, ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(channel.volume, ctx.currentTime + 0.02);
+          gain.gain.linearRampToValueAtTime(channel.volume * 0.6, ctx.currentTime + dur * 0.7);
+          gain.gain.linearRampToValueAtTime(0, ctx.currentTime + dur * 0.95);
 
-      // Gentle envelope
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(vol, ctx.currentTime + 0.02);
-      gain.gain.linearRampToValueAtTime(vol * 0.6, ctx.currentTime + dur * 0.7);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + dur * 0.95);
-
-      osc.connect(gain);
-      gain.connect(this.masterGain);
-
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + dur);
-      this.activeOscillators.push(osc);
-
-      osc.onended = () => {
-        this.activeOscillators = this.activeOscillators.filter((o) => o !== osc);
-      };
+          osc.connect(gain);
+          gain.connect(this.masterGain);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + dur);
+          this.activeOscillators.push(osc);
+          osc.onended = () => {
+            this.activeOscillators = this.activeOscillators.filter((o) => o !== osc);
+          };
+        }
+      }
 
       idx++;
-      const timer = window.setTimeout(playNext, dur * 1000);
-      if (kind === "melody") this.melodyTimer = timer;
-      else this.bassTimer = timer;
+      const timerId = window.setTimeout(playNext, dur * 1000);
+      this.channelTimers.push(timerId);
     };
 
     playNext();

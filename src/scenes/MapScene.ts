@@ -8,7 +8,7 @@ import { MusicManager } from "../audio/MusicManager.ts";
 import { showToast } from "../ui/Toast.ts";
 import { describeItemResult } from "../ui/itemFeedback.ts";
 import { saveGame } from "../core/saveManager.ts";
-import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel } from "../data/worlds.ts";
+import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel, trackForWorld } from "../data/worlds.ts";
 import { EGG_TIERS, tickEggs, calculateHatchLevel } from "../data/eggs.ts";
 
 const GAME_W = 390;
@@ -73,7 +73,7 @@ export class MapScene extends Phaser.Scene {
     this.gridOffsetY = 115; // below header + party strip
 
     this.buildMapUI();
-    MusicManager.play("map");
+    MusicManager.play(trackForWorld(map.worldIndex));
   }
 
   private buildMapUI(): void {

@@ -11,7 +11,7 @@ export class TitleScene extends Phaser.Scene {
   }
 
   create(): void {
-    MusicManager.stop();
+    MusicManager.play("title");
 
     // Title
     this.add.text(GAME_W / 2, 180, "POKEMON\nGAUNTLET", {

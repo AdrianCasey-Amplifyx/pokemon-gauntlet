@@ -5,6 +5,7 @@ import { createBattlePokemon } from "../core/statCalc.ts";
 import { createStarterBelt } from "../data/items.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { TOTAL_WORLDS } from "../data/worlds.ts";
+import { MusicManager } from "../audio/MusicManager.ts";
 
 const GAME_W = 390;
 
@@ -16,6 +17,8 @@ export class StarterSelectScene extends Phaser.Scene {
   }
 
   create(): void {
+    MusicManager.play("lab");
+
     this.add.text(GAME_W / 2, 60, "Choose your starter!", {
       fontSize: "22px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
     }).setOrigin(0.5);

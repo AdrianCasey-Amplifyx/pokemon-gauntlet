@@ -70,7 +70,8 @@ src/
   sprites/
     pokemonSprites.ts        # 151 pixel art sprites as palette + grid data
   audio/
-    MusicManager.ts          # Procedural map/battle music + short one-shot SFX presets (playSFX) via Web Audio API
+    MusicManager.ts          # Web Audio scheduler — plays TrackId tracks from tracks.ts, one timer per channel, + short one-shot SFX presets (playSFX)
+    tracks.ts                # 14 procedural track definitions (title / lab / town / world0-7 / battle_wild / battle_boss / battle_final) as { bpm, channels[] } data
   utils/
     random.ts                # RNG helpers
 tests/
