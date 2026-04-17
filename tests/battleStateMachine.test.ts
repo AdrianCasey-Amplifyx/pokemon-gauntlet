@@ -274,7 +274,7 @@ describe("BattleStateMachine", () => {
   });
 
   // --- Move mechanics (PRD §1.2) ---
-  it("drain moves heal the attacker for half the damage dealt", () => {
+  it("Mega Drain heals the attacker for half the damage dealt", () => {
     const rng = () => 0.5;
     const player = makeParty(["venonat"]);
     const enemy = makeParty(["rattata"]);
@@ -287,6 +287,41 @@ describe("BattleStateMachine", () => {
     const events = battle.submitPlayerAttack(0);
     const drain = events.find((e) => e.type === "drain_heal" && e.actor === "player");
     expect(drain).toBeDefined();
+  });
+
+  it("Leech Life heals the attacker for half the damage dealt", () => {
+    const rng = () => 0.5;
+    const player = makeParty(["paras"]);
+    const enemy = makeParty(["rattata"]);
+    player[0].moves[0] = getMoveForTest("leech_life");
+    player[0].cooldowns[0] = 0;
+    player[0].stats.spd = 999; // go first so we resolve the attack before enemy
+    player[0].currentHP = Math.max(1, player[0].maxHP - 20);
+    const preHP = player[0].currentHP;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const drain = events.find((e) => e.type === "drain_heal" && e.actor === "player");
+    expect(drain).toBeDefined();
+    // The heal only applies up to the end-of-turn enemy damage, but since player
+    // goes first and is at reduced HP with high spd, net HP should go up.
+    expect(player[0].currentHP).toBeGreaterThan(preHP);
+  });
+
+  it("Leech Life emits no drain_heal when the attacker is already at full HP", () => {
+    const rng = () => 0.5;
+    const player = makeParty(["paras"]);
+    const enemy = makeParty(["rattata"]);
+    player[0].moves[0] = getMoveForTest("leech_life");
+    player[0].cooldowns[0] = 0;
+    player[0].stats.spd = 999;
+    // currentHP already == maxHP (default from createBattlePokemon)
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const drain = events.find((e) => e.type === "drain_heal" && e.actor === "player");
+    // No drain event when there's no room to heal — matches intent.
+    expect(drain).toBeUndefined();
   });
 
   it("recoil moves damage the attacker after dealing damage", () => {
