@@ -8,7 +8,7 @@ import { MusicManager } from "../audio/MusicManager.ts";
 import { showToast } from "../ui/Toast.ts";
 import { describeItemResult } from "../ui/itemFeedback.ts";
 import { saveGame } from "../core/saveManager.ts";
-import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel, trackForWorld } from "../data/worlds.ts";
+import { getEncounterLevel, getEnemyPartySize, getRandomEncounterSpecies, MAPS_PER_WORLD, WORLD_NAMES, isBossRoom, getBossSpecies, getBossLevel, trackForWorld, trackForBattle } from "../data/worlds.ts";
 import { EGG_TIERS, tickEggs, calculateHatchLevel } from "../data/eggs.ts";
 
 const GAME_W = 390;
@@ -571,7 +571,6 @@ export class MapScene extends Phaser.Scene {
 
   // === BATTLE TRIGGER ===
   private triggerBattle(): void {
-    MusicManager.stop();
     const map = this.gameState.currentMap!;
     const level = getEncounterLevel(map.worldIndex, map.mapIndex);
     const partySize = getEnemyPartySize(map.worldIndex, map.mapIndex);
@@ -588,26 +587,22 @@ export class MapScene extends Phaser.Scene {
     this.registry.set("gameState", this.gameState);
     this.registry.set("enemyParty", enemyParty);
 
-    // Battle transition
-    this.isMoving = true;
-    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xffffff).setOrigin(0.5).setDepth(300).setAlpha(0);
-    const bars: Phaser.GameObjects.Rectangle[] = [];
-    for (let i = 0; i < 8; i++) {
-      bars.push(this.add.rectangle(-GAME_W, (GAME_H / 8) * i + GAME_H / 16, GAME_W * 2, GAME_H / 8 + 2, 0x000000).setOrigin(0.5).setDepth(301).setAlpha(0));
-    }
-    const battleText = this.add.text(GAME_W / 2, GAME_H / 2, "Wild Pokemon!", {
-      fontSize: "22px", fontFamily: "monospace", color: "#ff4444", fontStyle: "bold", stroke: "#000000", strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(302).setAlpha(0);
+    // Start battle music NOW so its intro sting plays during the
+    // transition rather than against a blank scene-start gap.
+    MusicManager.play(trackForBattle(map.worldIndex, false));
 
-    this.tweens.add({ targets: flash, alpha: 1, duration: 150, yoyo: true, repeat: 1 });
-    bars.forEach((bar, i) => this.tweens.add({ targets: bar, x: GAME_W / 2, alpha: 1, duration: 200, delay: 300 + i * 40, ease: "Power2" }));
-    this.tweens.add({ targets: battleText, alpha: 1, duration: 200, delay: 650 });
-    this.time.delayedCall(1200, () => this.scene.start("BattleScene"));
+    this.playBattleTransition({
+      colorFlash: 0xffffff,
+      wipeColor: 0x000000,
+      label: "Wild Pokemon!",
+      labelColor: "#ff4444",
+      labelSize: "24px",
+      durationMs: 2400,
+    });
   }
 
   // === BOSS BATTLE ===
   private triggerBossBattle(): void {
-    MusicManager.stop();
     const map = this.gameState.currentMap!;
     const bossSpeciesId = getBossSpecies(map.worldIndex);
     const bossLevel = getBossLevel(map.worldIndex, map.mapIndex);
@@ -623,21 +618,99 @@ export class MapScene extends Phaser.Scene {
     this.registry.set("enemyParty", [bossPokemon]);
     this.registry.set("isBossBattle", true);
 
-    // Boss battle transition — red-tinted, more dramatic
-    this.isMoving = true;
-    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0xff2222).setOrigin(0.5).setDepth(300).setAlpha(0);
-    const bars: Phaser.GameObjects.Rectangle[] = [];
-    for (let i = 0; i < 8; i++) {
-      bars.push(this.add.rectangle(-GAME_W, (GAME_H / 8) * i + GAME_H / 16, GAME_W * 2, GAME_H / 8 + 2, 0x220000).setOrigin(0.5).setDepth(301).setAlpha(0));
-    }
-    const battleText = this.add.text(GAME_W / 2, GAME_H / 2, "BOSS BATTLE!", {
-      fontSize: "26px", fontFamily: "monospace", color: "#ff4444", fontStyle: "bold", stroke: "#000000", strokeThickness: 4,
-    }).setOrigin(0.5).setDepth(302).setAlpha(0);
+    MusicManager.play(trackForBattle(map.worldIndex, true));
 
-    this.tweens.add({ targets: flash, alpha: 1, duration: 200, yoyo: true, repeat: 2 });
-    bars.forEach((bar, i) => this.tweens.add({ targets: bar, x: GAME_W / 2, alpha: 1, duration: 200, delay: 400 + i * 50, ease: "Power2" }));
-    this.tweens.add({ targets: battleText, alpha: 1, duration: 200, delay: 800 });
-    this.time.delayedCall(1500, () => this.scene.start("BattleScene"));
+    this.playBattleTransition({
+      colorFlash: 0xff2222,
+      wipeColor: 0x220000,
+      label: "BOSS BATTLE!",
+      labelColor: "#ff6666",
+      labelSize: "28px",
+      durationMs: 3000,
+    });
+  }
+
+  /**
+   * Shared battle-transition sequence. Runs a rotating rectangular
+   * wipe (eclipses the screen while spinning) layered with a colour
+   * flash and classic horizontal interlace bars, then fades in the
+   * announcement text. Caller starts the music before invoking so
+   * the intro sting plays over this animation.
+   */
+  private playBattleTransition(opts: {
+    colorFlash: number;
+    wipeColor: number;
+    label: string;
+    labelColor: string;
+    labelSize: string;
+    durationMs: number;
+  }): void {
+    this.isMoving = true;
+
+    const spinStart = Math.floor(opts.durationMs * 0.15);
+    const spinDuration = Math.floor(opts.durationMs * 0.55);
+    const barStart = Math.floor(opts.durationMs * 0.45);
+    const barStep = Math.floor(opts.durationMs * 0.025);
+    const textDelay = Math.floor(opts.durationMs * 0.75);
+
+    // Flash pulses (attention grab, sits behind everything else).
+    const flash = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, opts.colorFlash)
+      .setOrigin(0.5).setDepth(300).setAlpha(0);
+    this.tweens.add({ targets: flash, alpha: 1, duration: 90, yoyo: true, repeat: 3 });
+
+    // Rotating square that scales from a point to past-full-screen,
+    // eclipsing the map. Two-and-a-half rotations by the time it
+    // covers everything.
+    const spinner = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, opts.wipeColor)
+      .setOrigin(0.5).setDepth(301).setScale(0.02).setAngle(0);
+    this.tweens.add({
+      targets: spinner,
+      scaleX: 1.8,
+      scaleY: 1.8,
+      angle: 540,
+      duration: spinDuration,
+      delay: spinStart,
+      ease: "Cubic.easeIn",
+    });
+
+    // Interlace bars slide in over the spinner to give a retro feel
+    // once the screen is mostly covered.
+    const barCount = 10;
+    const bars: Phaser.GameObjects.Rectangle[] = [];
+    for (let i = 0; i < barCount; i++) {
+      bars.push(
+        this.add.rectangle(
+          -GAME_W,
+          (GAME_H / barCount) * i + GAME_H / (barCount * 2),
+          GAME_W * 2,
+          GAME_H / barCount + 2,
+          opts.wipeColor
+        ).setOrigin(0.5).setDepth(302).setAlpha(0)
+      );
+    }
+    bars.forEach((bar, i) =>
+      this.tweens.add({
+        targets: bar,
+        x: GAME_W / 2,
+        alpha: 1,
+        duration: 220,
+        delay: barStart + i * barStep,
+        ease: "Power2",
+      })
+    );
+
+    // Announcement text fades in after the wipe is nearly complete.
+    const battleText = this.add.text(GAME_W / 2, GAME_H / 2, opts.label, {
+      fontSize: opts.labelSize,
+      fontFamily: "monospace",
+      color: opts.labelColor,
+      fontStyle: "bold",
+      stroke: "#000000",
+      strokeThickness: 3,
+    }).setOrigin(0.5).setDepth(303).setAlpha(0);
+    this.tweens.add({ targets: battleText, alpha: 1, duration: 350, delay: textDelay });
+
+    this.time.delayedCall(opts.durationMs, () => this.scene.start("BattleScene"));
   }
 
   // === ITEMS MODAL ===
