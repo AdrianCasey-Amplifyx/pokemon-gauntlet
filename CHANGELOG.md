@@ -4,6 +4,7 @@ All notable game changes are recorded here. Newest entries at the top. See `CLAU
 
 ## 2026-04-17
 
+- **combat:** X-item boosts are now strictly one-battle-only (PRD 2026-04-17 §1.5). Boosts persist through switches as designed, but a pokemon's `battleBoosts` are cleared the moment it faints (so reviving mid-battle brings it back clean), and every player party member's boosts are wiped when the battle ends. Previously boosts could linger into the next battle on pokemon that weren't on the active party when the next `start()` ran. Implementation: new `clearBoosts` helper + `endBattle` method in `src/core/battleStateMachine.ts`; 4 new tests cover apply/swap/faint/battle-end transitions.
 - **ui:** Train screen now blocks forgetting the last no-cooldown move (PRD 2026-04-17 §1.4). Both the `FORGET` button on Current Moves and the TM forget-picker enforce `isLastCdZero`, with a tap on the disabled button surfacing the reason via toast so players aren't left guessing why the action is disabled.
 
 ## 2026-04-15

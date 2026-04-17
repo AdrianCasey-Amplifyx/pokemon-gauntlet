@@ -30,6 +30,11 @@ export type BattlePhase =
   | "RESOLVING"
   | "BATTLE_END";
 
+/** Reset a Pokemon's X-item stat stages to zero. */
+export function clearBoosts(p: BattlePokemon): void {
+  p.battleBoosts = { atk: 0, def: 0, spd: 0, spc: 0 };
+}
+
 export type BattleResult = "win" | "lose" | null;
 
 export type EventListener = (event: AnyBattleEvent) => void;
@@ -87,7 +92,7 @@ export class BattleStateMachine {
     // Clear any stale X-item boosts from prior battles on the player's party
     // (the same instances persist across battles; enemies are always fresh).
     for (const p of this.playerParty) {
-      p.battleBoosts = { atk: 0, def: 0, spd: 0, spc: 0 };
+      clearBoosts(p);
     }
     // Track all enemy Pokemon as seen
     for (const p of this.enemyParty) {
@@ -414,6 +419,7 @@ export class BattleStateMachine {
   private handleFaintCascade(events: AnyBattleEvent[]): boolean {
     // Check enemy faint
     if (this.enemyPokemon.currentHP <= 0) {
+      clearBoosts(this.enemyPokemon);
       events.push({
         type: "faint",
         target: "enemy",
@@ -437,9 +443,7 @@ export class BattleStateMachine {
         (p, i) => i !== this.enemyActiveIndex && p.currentHP > 0
       );
       if (nextEnemy === -1) {
-        events.push({ type: "battle_end", result: "win" } as BattleEndEvent);
-        this.result = "win";
-        this.phase = "BATTLE_END";
+        this.endBattle("win", events);
         return true;
       } else {
         this.doSwap("enemy", nextEnemy, events);
@@ -448,6 +452,8 @@ export class BattleStateMachine {
 
     // Check player faint
     if (this.playerPokemon.currentHP <= 0) {
+      // Fainting clears the mon's boosts — revive mid-battle still comes back clean.
+      clearBoosts(this.playerPokemon);
       events.push({
         type: "faint",
         target: "player",
@@ -459,9 +465,7 @@ export class BattleStateMachine {
       );
       if (nextPlayer === -1) {
         // All player Pokemon fainted — player loses
-        events.push({ type: "battle_end", result: "lose" } as BattleEndEvent);
-        this.result = "lose";
-        this.phase = "BATTLE_END";
+        this.endBattle("lose", events);
         return true;
       } else {
         // Player must choose who to send in
@@ -472,5 +476,14 @@ export class BattleStateMachine {
     }
 
     return false;
+  }
+
+  private endBattle(result: "win" | "lose", events: AnyBattleEvent[]): void {
+    // Defense in depth: wipe every player mon's boosts at battle end so the
+    // next battle can't inherit them even if start() gets skipped somewhere.
+    for (const p of this.playerParty) clearBoosts(p);
+    events.push({ type: "battle_end", result } as BattleEndEvent);
+    this.result = result;
+    this.phase = "BATTLE_END";
   }
 }

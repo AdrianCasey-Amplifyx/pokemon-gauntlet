@@ -181,4 +181,59 @@ describe("BattleStateMachine", () => {
       expect(battle.enemyPokemon.species.id).toBe("squirtle");
     }
   });
+
+  // --- X-item boost scope (PRD §1.5) ---
+  it("clears battleBoosts on start even if stale from a prior battle", () => {
+    const battle = makeBattle(["charmander"], ["eevee"]);
+    battle.playerPokemon.battleBoosts.atk = 2;
+    battle.start();
+    expect(battle.playerPokemon.battleBoosts.atk).toBe(0);
+  });
+
+  it("persists battleBoosts across a player swap and back", () => {
+    const battle = makeBattle(["charmander", "squirtle"], ["eevee"]);
+    battle.start();
+    const charmander = battle.playerPokemon;
+    charmander.battleBoosts.atk = 1;
+
+    battle.submitPlayerSwap(1);
+    // On the bench — boost survives.
+    expect(charmander.battleBoosts.atk).toBe(1);
+
+    if (battle.phase === "PLAYER_CHOOSE_ACTION") {
+      battle.submitPlayerSwap(0);
+      // Back in — boost still there.
+      expect(battle.playerPokemon.species.id).toBe("charmander");
+      expect(battle.playerPokemon.battleBoosts.atk).toBe(1);
+    }
+  });
+
+  it("clears battleBoosts when a player Pokemon faints", () => {
+    const battle = makeBattle(["charmander", "squirtle"], ["eevee"]);
+    battle.start();
+    const charmander = battle.playerPokemon;
+    charmander.battleBoosts.atk = 2;
+    // Pre-faint the active — the next turn's cascade should clear boosts
+    // and force-swap in the bench mon.
+    charmander.currentHP = 0;
+    battle.submitPlayerAttack(0);
+    expect(charmander.battleBoosts.atk).toBe(0);
+  });
+
+  it("clears all player battleBoosts on battle end", () => {
+    const battle = makeBattle(["charmander"], ["eevee"]);
+    battle.start();
+    battle.playerPokemon.battleBoosts.atk = 2;
+    battle.playerPokemon.battleBoosts.spd = 1;
+    battle.enemyPokemon.currentHP = 1;
+    // One hit should finish the enemy and end the battle.
+    for (let i = 0; i < 10 && battle.phase !== "BATTLE_END"; i++) {
+      if (battle.phase === "PLAYER_CHOOSE_ACTION") battle.submitPlayerAttack(0);
+      else break;
+    }
+    if (battle.phase === "BATTLE_END") {
+      expect(battle.playerPokemon.battleBoosts.atk).toBe(0);
+      expect(battle.playerPokemon.battleBoosts.spd).toBe(0);
+    }
+  });
 });
