@@ -104,6 +104,12 @@ export interface BattlePokemon {
    */
   battleState?: BattleMoveState;
   isFavourite?: boolean; // starred in the roster UI, persisted
+  /**
+   * Move ids this Pokemon has previously known and forgotten (via the Train
+   * FORGET button or a TM overwrite). Relearnable free of charge from the
+   * Train screen. Persisted to save.
+   */
+  forgottenMoves?: string[];
 }
 
 export interface BattleMoveState {

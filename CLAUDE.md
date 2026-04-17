@@ -64,6 +64,7 @@ src/
     TypeColors.ts            # PokemonType -> hex color map (15 types)
     Toast.ts                 # Reusable fading-text confirmation toast (+ optional SFX)
     itemFeedback.ts          # ApplyResult -> {message, sfx, color} helper shared by MainMenu and MapScene
+    FilterModal.ts           # Reusable type-picker overlay used by every list screen (roster/party/trader/train/pokedex)
   sprites/
     pokemonSprites.ts        # 151 pixel art sprites as palette + grid data
   audio/
@@ -113,7 +114,7 @@ TitleScene → StarterSelectScene → MainMenuScene (town hub)
 
 ## Data Model
 
-- `BattlePokemon` — runtime instance with mutable HP, XP, cooldowns, statusEffects, `statBonuses` (persisted vitamin bonuses, layered via `applyStatBonuses`), and `battleBoosts` (temporary X-item stage counters, reset per battle on the player's roster)
+- `BattlePokemon` — runtime instance with mutable HP, XP, cooldowns, statusEffects, `statBonuses` (persisted vitamin bonuses, layered via `applyStatBonuses`), `battleBoosts` (temporary X-item stage counters, reset per battle on the player's roster), and `forgottenMoves` (persisted list of move ids the player previously knew and voluntarily forgot — relearnable free from the Train screen)
 - `PokemonSpecies` — static species data with base stats and `MovePoolEntry[]` (moveId + unlock level), plus `evolvesFrom`/`evolutionLevel` for level-based evolution and `evolutionStone` for stone-based evolution (Raichu, Ninetales, Eeveelutions, etc)
 - `ItemData` — carries `category: ItemCategory` (`medicine` · `field` · `vitamin` · `stone` · `candy` · `battle` · `tm`) and optional `param` (stat key, stone id, TM moveId). `applyItem` dispatches by category
 - `GameState` — `roster`, `playerParty`, `playerItems`, `gold`, `seenPokemon` (`Record<speciesId, highestLevelEncountered>` — unlocks species in the Pokemon Trader and sets its buy/sell level + price), `caughtPokemon` (`string[]` — persistent Pokedex flag, stays set after selling), `worlds` progress, `activeWorld`, `currentMap`, `playerX`/`playerY`, `repelSteps`, `eggs` (array of `EggInstance` with tier + stepsRemaining)

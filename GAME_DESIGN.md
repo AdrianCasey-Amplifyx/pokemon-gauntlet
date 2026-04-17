@@ -272,7 +272,12 @@ Secondary menus accessed from **Pokemon**:
 - **Pagination** — the Pokemon, Select Party, Train, and item-use target screens all cap at **10 cards per page** with a `< PREV` / Page X/Y / `NEXT >` strip above the BACK button. State is preserved across in-screen redraws (toggling a party slot, tapping a star) so the user doesn't snap back to page 1.
 - **Roster sort** — the Pokemon screen has a `LEVEL` (default, high → low) / `TYPE` (alphabetical by primary type) / `A-Z` toggle at the top. Favourites (see below) always pin to the top within the active sort.
 - **Favourites** — every roster card has a tappable ☆/★ star at its top-right corner. Tapping toggles `BattlePokemon.isFavourite`, which persists via an optional `fav` field on the saved pokemon record. Old saves load with everyone unstarred.
-- **Items sort** — the Items screen has an `A-Z` (default) / `QTY` (high → low) toggle that re-orders entries *within* each category section (Medicine, Battle, Vitamins, Stones, Candy, TMs, Field) while preserving the category grouping.
+- **Items sort** — the Items screen has an `A-Z` (default) / `QTY` (high → low) toggle that re-orders entries inside the active category tab.
+- **Type filter (shared)** — every list screen (Pokemon, Select Party, Pokedex, Train, Pokemon Trader buy & sell) has a `TYPE FILTER` pill on the sort row. Tapping opens the shared `FilterModal` (`src/ui/FilterModal.ts`) — a 15-type grid + reset-all button. Picking a type narrows the list; tapping the pill again clears it. Single `typeFilter: PokemonType | null` field on `MainMenuScene` backs every screen. When the filter hides the whole list the screen reads "No Pokemon match this filter." so the pill state is always discoverable.
+- **Pokemon detail screen** — tapping any Pokemon in the roster or Pokedex opens a full-screen detail view: large portrait, type chips, HP/XP bars (roster only), base stats with `+N` vitamin-bonus overlays, evolution hint (level or stone-based), and up to 4 full move cards with type / power / accuracy / cooldown / status-effect chance / description. For Pokedex cold lookups the full learnset is shown with Lv-unlock stamps. BACK returns to the screen the user came from.
+- **Forgotten moves bucket** — every Pokemon keeps a persistent `forgottenMoves: string[]` list. Tapping FORGET or overwriting via a TM pushes the old move into that bucket, and the Train screen shows a dedicated `FORGOTTEN MOVES — RELEARN FREE` section with one-tap free relearn. The `N new` badge on the Train roster counts only genuinely-new moves (not already known, not in the forgotten bucket).
+- **Train list priority sort** — the Train screen's Pokemon list is pre-ordered: (1) evolution ready right now, (2) has a newly-available move from levelling/evolution/TM, (3) ascending level. Favourites still pin to the top inside each bucket, and the card stroke colour mirrors the bucket (orange for evolve-ready, green for new-moves, neutral otherwise).
+- **Stone-evolution hint** — species whose only evolution is stone-based (Eevee branches, Pikachu, Vulpix, Clefairy, etc.) show a non-interactive "Evolves to {Target} with a special item" hint card on the Train screen. Stone name is omitted on purpose to preserve discovery.
 
 ### 5.1.2 Pokedex
 
@@ -296,7 +301,9 @@ Header shows running totals `Seen X/151   Caught Y/151`.
 
 ### 6.1 PokeMart (Items)
 
-Items are world-gated so that the store grows as the player progresses. The PokeMart UI groups items by category for scannability.
+Items are world-gated so that the store grows as the player progresses. The PokeMart UI is organised into **7 category tabs** — Medicine / Field / X-Item / Vitamin / Candy / Stone / TM — with **10 items per page** and PREV / NEXT pagination. Switching tabs always resets to page 1. Items the current world progress hasn't yet unlocked are simply absent from the tab.
+
+The Items screen (town) mirrors the PokeMart layout with the same seven tabs plus an **Egg** tab listing any active eggs with a `stepsTaken / stepsToHatch` progress bar per card.
 
 **Medicine**
 

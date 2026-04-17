@@ -25,6 +25,8 @@ interface SavePokemon {
   moveIds?: string[]; // persisted move choices (optional for backwards compat)
   statBonuses?: Stats; // vitamin bonuses, optional for backwards compat
   fav?: boolean; // starred in the roster UI, optional for backwards compat
+  /** Move ids the player has intentionally forgotten; relearnable for free. */
+  forgotten?: string[];
 }
 
 function hasAnyBonus(s: Stats): boolean {
@@ -70,6 +72,9 @@ function serializePokemon(p: BattlePokemon): SavePokemon {
   if (p.isFavourite) {
     save.fav = true;
   }
+  if (p.forgottenMoves && p.forgottenMoves.length > 0) {
+    save.forgotten = [...p.forgottenMoves];
+  }
   return save;
 }
 
@@ -100,6 +105,7 @@ function deserializePokemon(s: SavePokemon): BattlePokemon {
     statBonuses,
     battleBoosts: { atk: 0, def: 0, spd: 0, spc: 0 },
     isFavourite: s.fav === true,
+    forgottenMoves: s.forgotten ? [...s.forgotten] : [],
   };
 }
 

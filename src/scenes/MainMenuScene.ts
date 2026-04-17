@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { BattleItem, BattlePokemon, GameState, EggTier, ItemCategory } from "../types.ts";
+import type { BattleItem, BattlePokemon, GameState, EggTier, ItemCategory, PokemonType, PokemonSpecies, MoveData } from "../types.ts";
 import { createBattlePokemon, evolveIntoSpecies, xpToNextLevel } from "../core/statCalc.ts";
 import { saveGame } from "../core/saveManager.ts";
 import { ITEMS, applyItem, getTMMove, VITAMIN_CONFIG } from "../data/items.ts";
@@ -17,12 +17,16 @@ import {
   canUseTM,
   canUseRareCandy,
   rareCandyCap,
+  countNewMoves,
+  getStoneEvolutionTarget,
 } from "../data/shop.ts";
 import { EGG_TIERS, getAllEggTiers, createEgg } from "../data/eggs.ts";
 import { getMove } from "../data/moves.ts";
 import { MusicManager } from "../audio/MusicManager.ts";
 import { showToast } from "../ui/Toast.ts";
 import { describeItemResult } from "../ui/itemFeedback.ts";
+import { openFilterModal } from "../ui/FilterModal.ts";
+import { TYPE_COLORS } from "../ui/TypeColors.ts";
 import { generateDungeon } from "../core/mapGenerator.ts";
 import { WORLD_NAMES, MAPS_PER_WORLD } from "../data/worlds.ts";
 
@@ -31,9 +35,32 @@ const GAME_H = 844;
 const PARTY_SIZE = 3;
 const LIST_PAGE_SIZE = 10;
 
+/**
+ * Push a move id into a Pokemon's forgotten-moves bucket, deduping and
+ * initializing the array if this is the first forget. Used by both the
+ * Train FORGET button and the TM overwrite path so the player can always
+ * relearn anything they previously knew at no cost.
+ */
+function pushForgotten(pokemon: BattlePokemon, moveId: string): void {
+  if (!pokemon.forgottenMoves) pokemon.forgottenMoves = [];
+  if (!pokemon.forgottenMoves.includes(moveId)) {
+    pokemon.forgottenMoves.push(moveId);
+  }
+}
+
 type RosterSort = "level" | "type" | "name";
 type ItemSort = "name" | "quantity";
 type PokeshopMode = "buy" | "sell";
+
+/** Context-dependent state stored alongside `detailContext` so tapping BACK
+ *  on the Pokemon detail screen returns the player to the list they came from.
+ */
+type DetailReturn =
+  | { screen: "roster" }
+  | { screen: "pokedex" }
+  | { screen: "train" }
+  | { screen: "party" }
+  | { screen: "pokeshop" };
 
 export class MainMenuScene extends Phaser.Scene {
   private gameState!: GameState;
@@ -42,6 +69,12 @@ export class MainMenuScene extends Phaser.Scene {
   private rosterSort: RosterSort = "level";
   private itemSort: ItemSort = "name";
   private pokeshopMode: PokeshopMode = "buy";
+  /** Single-type filter applied to every roster-style list. `null` = show all. */
+  private typeFilter: PokemonType | null = null;
+  /** Active PokeMart category tab; `null` = show all categories stacked. */
+  private shopTab: ItemCategory = "medicine";
+  /** Active Items screen tab; `"egg"` shows the Eggs bucket instead of a category. */
+  private itemsTab: ItemCategory | "egg" = "medicine";
 
   constructor() {
     super({ key: "MainMenuScene" });
@@ -50,6 +83,9 @@ export class MainMenuScene extends Phaser.Scene {
   create(): void {
     this.selectedParty = [];
     this.pokeshopMode = "buy";
+    this.typeFilter = null;
+    this.shopTab = "medicine";
+    this.itemsTab = "medicine";
     MusicManager.play("map");
 
     this.gameState = this.registry.get("gameState") as GameState;
@@ -242,8 +278,9 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   /**
-   * Roster sorted by the active sort mode, favourites always first.
-   * Produces a new array — safe to slice/paginate without mutating state.
+   * Roster sorted by the active sort mode, favourites always first, filtered
+   * by the active type filter (if any). Produces a new array — safe to
+   * slice/paginate without mutating state.
    */
   private getSortedRoster(): BattlePokemon[] {
     const compare = (a: BattlePokemon, b: BattlePokemon): number => {
@@ -259,10 +296,55 @@ export class MainMenuScene extends Phaser.Scene {
           );
       }
     };
-    return [...this.gameState.roster].sort((a, b) => {
+    const filtered = this.typeFilter === null
+      ? [...this.gameState.roster]
+      : this.gameState.roster.filter((p) => p.species.types.includes(this.typeFilter!));
+    return filtered.sort((a, b) => {
       const favDiff = (a.isFavourite ? 0 : 1) - (b.isFavourite ? 0 : 1);
       if (favDiff !== 0) return favDiff;
       return compare(a, b);
+    });
+  }
+
+  /**
+   * Compact type-filter pill. Left-aligned so it sits on the same row as
+   * the right-aligned sort bar. Tapping opens the shared FilterModal.
+   * `redraw` is invoked after the user picks (or clears) a type.
+   */
+  private drawTypeFilterPill(y: number, redraw: () => void): void {
+    const x = 20;
+    const w = 108;
+    const active = this.typeFilter !== null;
+    const color = active ? TYPE_COLORS[this.typeFilter!] : 0x1a1a2e;
+    const stroke = active ? 0xffffff : 0x444466;
+    const bg = this.add
+      .rectangle(x, y, w, 22, color, active ? 1 : 1)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(1, stroke);
+    const label = active
+      ? `${this.typeFilter!.toUpperCase()}  ✕`
+      : "TYPE FILTER";
+    this.add
+      .text(x + w / 2, y, label, {
+        fontSize: "10px", fontFamily: "monospace",
+        color: active ? "#ffffff" : "#8899aa",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    bg.setInteractive();
+    bg.on("pointerdown", () => {
+      if (this.typeFilter !== null) {
+        // Quick-clear without opening the modal
+        this.typeFilter = null;
+        this.listPage = 0;
+        redraw();
+        return;
+      }
+      openFilterModal(this, this.typeFilter, (picked) => {
+        this.typeFilter = picked;
+        this.listPage = 0;
+        redraw();
+      });
     });
   }
 
@@ -316,17 +398,28 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
 
+    this.drawTypeFilterPill(78, () => this.showScreen("roster", false));
+
     const sorted = this.getSortedRoster();
     this.clampListPage(sorted.length);
     const { slice } = this.pagedSlice(sorted);
 
+    if (sorted.length === 0) {
+      this.add.text(GAME_W / 2, 240, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+      return;
+    }
+
     slice.forEach((pokemon, localIdx) => {
-      const y = 74 + localIdx * 64;
+      const y = 100 + localIdx * 62;
       const x = 20;
       const w = GAME_W - 40;
       const h = 58;
 
-      this.add.rectangle(x + w / 2, y + h / 2, w, h, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
+      const cardBg = this.add.rectangle(x + w / 2, y + h / 2, w, h, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
+      cardBg.setInteractive();
+      cardBg.on("pointerdown", () => this.showPokemonDetail(pokemon, { screen: "roster" }));
 
       if (this.textures.exists(pokemon.species.spriteKey)) {
         const img = this.add.image(x + 25, y + h / 2, pokemon.species.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
@@ -392,12 +485,28 @@ export class MainMenuScene extends Phaser.Scene {
       fontSize: "11px", fontFamily: "monospace", color: "#88aacc",
     }).setOrigin(0.5);
 
-    this.clampListPage(all.length);
-    const { slice, start } = this.pagedSlice(all);
+    this.drawTypeFilterPill(70, () => this.showScreen("pokedex", false));
 
-    slice.forEach((species, localIdx) => {
-      const dexNum = start + localIdx + 1;
-      const y = 72 + localIdx * 66;
+    // Filter respects type selection but keeps original Dex numbering via dexIndex.
+    const indexed = all.map((species, dexIndex) => ({ species, dexIndex }));
+    const filtered = this.typeFilter === null
+      ? indexed
+      : indexed.filter((e) => e.species.types.includes(this.typeFilter!));
+
+    this.clampListPage(filtered.length);
+    const { slice } = this.pagedSlice(filtered);
+
+    if (filtered.length === 0) {
+      this.add.text(GAME_W / 2, 260, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+      return;
+    }
+
+    slice.forEach((entry, localIdx) => {
+      const dexNum = entry.dexIndex + 1;
+      const species = entry.species;
+      const y = 92 + localIdx * 66;
       const w = GAME_W - 40;
       const h = 60;
       const x = 20;
@@ -407,7 +516,11 @@ export class MainMenuScene extends Phaser.Scene {
 
       const cardColor = isCaught ? 0x1a2a22 : isSeen ? 0x1a1a2e : 0x14141a;
       const strokeColor = isCaught ? 0x44aa66 : isSeen ? 0x44557a : 0x2a2a33;
-      this.add.rectangle(x + w / 2, y + h / 2, w, h, cardColor).setOrigin(0.5).setStrokeStyle(1, strokeColor);
+      const cardBg = this.add.rectangle(x + w / 2, y + h / 2, w, h, cardColor).setOrigin(0.5).setStrokeStyle(1, strokeColor);
+      if (isSeen) {
+        cardBg.setInteractive();
+        cardBg.on("pointerdown", () => this.showPokemonDetail(species, { screen: "pokedex" }));
+      }
 
       // Dex number on the left
       this.add.text(x + 10, y + 8, `#${dexNum.toString().padStart(3, "0")}`, {
@@ -477,23 +590,55 @@ export class MainMenuScene extends Phaser.Scene {
       }
     });
 
-    this.drawPagination(all.length, () => this.showScreen("pokedex", false));
+    this.drawPagination(filtered.length, () => this.showScreen("pokedex", false));
   }
 
   // --- Items view ---
   private drawItems(): void {
-    this.add.text(GAME_W / 2, 24, "YOUR ITEMS", { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 22, "YOUR ITEMS", { fontSize: "18px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
 
-    const items = this.gameState.playerItems.filter((b) => b.quantity > 0);
+    const allItems = this.gameState.playerItems.filter((b) => b.quantity > 0);
     const eggs = this.gameState.eggs;
 
-    if (items.length === 0 && eggs.length === 0) {
-      this.add.text(GAME_W / 2, 200, "No items!\nVisit the PokeMart to buy some.", { fontSize: "14px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
+    if (allItems.length === 0 && eggs.length === 0) {
+      this.add.text(GAME_W / 2, 240, "No items!\nVisit the PokeMart to buy some.", {
+        fontSize: "14px", fontFamily: "monospace", color: "#888888", align: "center",
+      }).setOrigin(0.5);
       return;
     }
 
+    // Build the tab bar — same seven item categories as PokeMart plus an
+    // Eggs tab (always shown, even when empty, so the player never wonders
+    // where their eggs went).
+    type ItemTab = ItemCategory | "egg";
+    const tabs: { value: ItemTab; label: string }[] = [
+      ...MainMenuScene.SHOP_TAB_ORDER.map((cat) => ({
+        value: cat as ItemTab,
+        label: MainMenuScene.CATEGORY_LABELS[cat],
+      })),
+      { value: "egg", label: `EGG${eggs.length > 0 ? ` ${eggs.length}` : ""}` },
+    ];
+    this.drawCategoryTabs<ItemTab>(
+      58,
+      tabs,
+      this.itemsTab,
+      (value) => {
+        if (this.itemsTab === value) return;
+        this.itemsTab = value;
+        this.listPage = 0;
+        this.showScreen("items", false);
+      },
+    );
+
+    if (this.itemsTab === "egg") {
+      this.drawItemsEggTab(eggs);
+      return;
+    }
+
+    // Sort bar reuses the existing A-Z / Qty toggle but only applies inside
+    // the active category tab.
     this.drawSortBar<ItemSort>(
-      52,
+      100,
       [
         { value: "name", label: "A-Z" },
         { value: "quantity", label: "QTY" },
@@ -506,125 +651,97 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
 
-    // Group by category so sections are obvious
-    const categoryOrder: ItemCategory[] = ["medicine", "battle", "vitamin", "stone", "candy", "tm", "field"];
-    const categoryLabels: Record<ItemCategory, string> = {
-      medicine: "MEDICINE",
-      battle: "BATTLE",
-      vitamin: "VITAMINS",
-      stone: "STONES",
-      candy: "CANDY",
-      tm: "TMs",
-      field: "FIELD",
-    };
-    const grouped = new Map<ItemCategory, BattleItem[]>();
-    for (const belt of items) {
-      const cat = belt.item.category;
-      if (!grouped.has(cat)) grouped.set(cat, []);
-      grouped.get(cat)!.push(belt);
-    }
-    // Sort within each category by the active mode
+    const filtered = allItems.filter((b) => b.item.category === this.itemsTab);
     const sortFn = this.itemSort === "name"
       ? (a: BattleItem, b: BattleItem) => a.item.name.localeCompare(b.item.name)
       : (a: BattleItem, b: BattleItem) => b.quantity - a.quantity || a.item.name.localeCompare(b.item.name);
-    for (const list of grouped.values()) list.sort(sortFn);
+    const sorted = [...filtered].sort(sortFn);
 
-    let y = 80;
-    for (const cat of categoryOrder) {
-      const list = grouped.get(cat);
-      if (!list || list.length === 0) continue;
-
-      // Section header
-      this.add.text(20, y, categoryLabels[cat], {
-        fontSize: "10px", fontFamily: "monospace", color: "#7788aa", fontStyle: "bold",
-      });
-      y += 14;
-
-      for (const belt of list) {
-        if (y + 25 > GAME_H - 80) break;
-
-        const w = GAME_W - 40;
-        this.add.rectangle(GAME_W / 2, y + 22, w, 44, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
-
-        // Icon
-        const icon = this.getItemIcon(belt.item.id);
-        this.add.text(30, y + 22, icon, { fontSize: "18px", fontFamily: "monospace" }).setOrigin(0.5);
-
-        // Name + quantity
-        this.add.text(55, y + 13, `${belt.item.name}  x${belt.quantity}`, {
-          fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
-        }).setOrigin(0, 0.5);
-
-        // Description
-        this.add.text(55, y + 30, belt.item.description, {
-          fontSize: "8px", fontFamily: "monospace", color: "#888888",
-        }).setOrigin(0, 0.5);
-
-        this.drawItemUseButton(belt, GAME_W - 48, y + 22);
-
-        y += 48;
-      }
-      y += 6;
-    }
-
-    // Eggs section — full card style so it's impossible to miss, with a
-    // progress bar ticking toward hatch.
-    if (eggs.length > 0) {
-      const headerY = y + 8;
-
-      // Divider + header
-      this.add.rectangle(GAME_W / 2, headerY - 8, GAME_W - 60, 1, 0x445566);
-      this.add.text(GAME_W / 2, headerY + 6, `EGGS (${eggs.length})`, {
-        fontSize: "13px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold",
+    if (sorted.length === 0) {
+      this.add.text(GAME_W / 2, 260, "No items in this category.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
       }).setOrigin(0.5);
-
-      eggs.forEach((egg, i) => {
-        const eggY = headerY + 32 + i * 58;
-        if (eggY + 25 > GAME_H - 70) return;
-        const y = eggY;
-
-        const tierData = EGG_TIERS[egg.tier];
-        const w = GAME_W - 40;
-
-        // Card
-        this.add.rectangle(GAME_W / 2, y, w, 50, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(2, tierData.color);
-
-        // Egg sprite
-        if (this.textures.exists(tierData.spriteKey)) {
-          const img = this.add.image(35, y, tierData.spriteKey).setDisplaySize(40, 40).setOrigin(0.5);
-          img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
-        }
-
-        // Name
-        this.add.text(65, y - 12, tierData.name, {
-          fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
-        }).setOrigin(0, 0.5);
-
-        // Steps walked, right-aligned (e.g. "3 / 150")
-        const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
-        this.add.text(GAME_W - 25, y - 12, `${stepsTaken} / ${tierData.stepsToHatch}`, {
-          fontSize: "11px", fontFamily: "monospace", color: "#aaccff", fontStyle: "bold",
-        }).setOrigin(1, 0.5);
-
-        // Flavor line
-        const flavor = egg.stepsRemaining === 0 ? "Ready to hatch!" : "Walk in dungeons to hatch";
-        this.add.text(65, y + 5, flavor, {
-          fontSize: "9px", fontFamily: "monospace",
-          color: egg.stepsRemaining === 0 ? "#44ff88" : "#888899",
-        }).setOrigin(0, 0.5);
-
-        // Progress bar
-        const barX = 65;
-        const barY = y + 17;
-        const barW = GAME_W - barX - 25;
-        const barH = 5;
-        this.add.rectangle(barX + barW / 2, barY, barW, barH, 0x222233).setOrigin(0.5);
-        const pct = Math.max(0, Math.min(1, stepsTaken / tierData.stepsToHatch));
-        if (pct > 0) {
-          this.add.rectangle(barX, barY - barH / 2, barW * pct, barH, tierData.color).setOrigin(0, 0);
-        }
-      });
+      return;
     }
+
+    this.clampListPage(sorted.length);
+    const { slice } = this.pagedSlice(sorted);
+
+    slice.forEach((belt, localIdx) => {
+      const y = 130 + localIdx * 56;
+      if (y + 25 > GAME_H - 90) return;
+
+      const w = GAME_W - 40;
+      this.add.rectangle(GAME_W / 2, y, w, 48, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(1, 0x333355);
+
+      const icon = this.getItemIcon(belt.item.id);
+      this.add.text(28, y, icon, { fontSize: "18px", fontFamily: "monospace" }).setOrigin(0.5);
+
+      this.add.text(52, y - 10, `${belt.item.name}  x${belt.quantity}`, {
+        fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      this.add.text(52, y + 8, belt.item.description, {
+        fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        wordWrap: { width: 230 },
+      }).setOrigin(0, 0.5);
+
+      this.drawItemUseButton(belt, GAME_W - 40, y);
+    });
+
+    this.drawPagination(sorted.length, () => this.showScreen("items", false));
+  }
+
+  /** Dedicated Egg tab under the Items screen — paginated owned eggs. */
+  private drawItemsEggTab(eggs: { id: string; tier: EggTier; speciesId: string; stepsRemaining: number }[]): void {
+    if (eggs.length === 0) {
+      this.add.text(GAME_W / 2, 260, "No eggs yet — visit the Egg Shop\nto buy one and walk it to hatch.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788", align: "center",
+      }).setOrigin(0.5);
+      return;
+    }
+
+    this.clampListPage(eggs.length);
+    const { slice } = this.pagedSlice(eggs);
+
+    slice.forEach((egg, localIdx) => {
+      const y = 120 + localIdx * 66;
+      const tierData = EGG_TIERS[egg.tier];
+      const w = GAME_W - 40;
+
+      this.add.rectangle(GAME_W / 2, y, w, 58, 0x1a1a2e).setOrigin(0.5).setStrokeStyle(2, tierData.color);
+
+      if (this.textures.exists(tierData.spriteKey)) {
+        const img = this.add.image(38, y, tierData.spriteKey).setDisplaySize(44, 44).setOrigin(0.5);
+        img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+
+      this.add.text(70, y - 16, tierData.name, {
+        fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+
+      const stepsTaken = tierData.stepsToHatch - egg.stepsRemaining;
+      this.add.text(GAME_W - 25, y - 16, `${stepsTaken} / ${tierData.stepsToHatch}`, {
+        fontSize: "11px", fontFamily: "monospace", color: "#aaccff", fontStyle: "bold",
+      }).setOrigin(1, 0.5);
+
+      const flavor = egg.stepsRemaining === 0 ? "Ready to hatch!" : "Walk in dungeons to hatch";
+      this.add.text(70, y, flavor, {
+        fontSize: "9px", fontFamily: "monospace",
+        color: egg.stepsRemaining === 0 ? "#44ff88" : "#888899",
+      }).setOrigin(0, 0.5);
+
+      const barX = 70;
+      const barY = y + 14;
+      const barW = GAME_W - barX - 25;
+      const barH = 5;
+      this.add.rectangle(barX + barW / 2, barY, barW, barH, 0x222233).setOrigin(0.5);
+      const pct = Math.max(0, Math.min(1, stepsTaken / tierData.stepsToHatch));
+      if (pct > 0) {
+        this.add.rectangle(barX, barY - barH / 2, barW * pct, barH, tierData.color).setOrigin(0, 0);
+      }
+    });
+
+    this.drawPagination(eggs.length, () => this.showScreen("items", false));
   }
 
   /** Draw the USE / BATTLE / TM button for an item card based on its category. */
@@ -876,10 +993,61 @@ export class MainMenuScene extends Phaser.Scene {
     overlay.once("pointerdown", onContinue);
   }
 
+  /**
+   * Canonical ordering for the category-tab strip shared by PokeMart and
+   * the Items screen. Medicine and field come first because they're the
+   * categories with the most turnover during a run.
+   */
+  private static readonly SHOP_TAB_ORDER: ItemCategory[] = [
+    "medicine", "field", "battle", "vitamin", "candy", "stone", "tm",
+  ];
+  private static readonly CATEGORY_LABELS: Record<ItemCategory, string> = {
+    medicine: "MED",
+    field: "FIELD",
+    battle: "X-ITEM",
+    vitamin: "VIT",
+    candy: "CANDY",
+    stone: "STONE",
+    tm: "TM",
+  };
+
+  /**
+   * Compact horizontal tab strip. Used by PokeMart, Items, and (in extended
+   * form) the Items screen's Eggs tab. Tabs wrap to a second row if too many
+   * to fit; the active tab highlights with a stroke + solid fill.
+   */
+  private drawCategoryTabs<T extends string>(
+    y: number,
+    tabs: { value: T; label: string }[],
+    active: T,
+    onPick: (value: T) => void,
+  ): number {
+    const margin = 10;
+    const gap = 4;
+    const usableW = GAME_W - margin * 2;
+    const tabW = Math.floor((usableW - gap * (tabs.length - 1)) / tabs.length);
+    const tabH = 26;
+    tabs.forEach((tab, idx) => {
+      const x = margin + idx * (tabW + gap) + tabW / 2;
+      const isActive = tab.value === active;
+      const bg = this.add.rectangle(x, y, tabW, tabH, isActive ? 0x4466aa : 0x1a1a2e)
+        .setOrigin(0.5)
+        .setStrokeStyle(1, isActive ? 0x88aadd : 0x333355);
+      this.add.text(x, y, tab.label, {
+        fontSize: "10px", fontFamily: "monospace",
+        color: isActive ? "#ffffff" : "#8899aa",
+        fontStyle: "bold",
+      }).setOrigin(0.5);
+      bg.setInteractive();
+      bg.on("pointerdown", () => onPick(tab.value));
+    });
+    return y + tabH;
+  }
+
   // --- Item Shop ---
   private drawShop(): void {
-    this.add.text(GAME_W / 2, 25, "POKEMART", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 48, `Gold: ${this.gameState.gold}`, { fontSize: "13px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 22, "POKEMART", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 44, `Gold: ${this.gameState.gold}`, { fontSize: "13px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
 
     const unlocked = getWorldsUnlocked(this.gameState.worlds);
     const available = getAvailableShopItems(unlocked);
@@ -889,80 +1057,71 @@ export class MainMenuScene extends Phaser.Scene {
       return;
     }
 
-    // Group by category for visual clarity
-    const categoryOrder: ItemCategory[] = ["medicine", "field", "battle", "vitamin", "candy", "stone", "tm"];
-    const categoryLabels: Record<ItemCategory, string> = {
-      medicine: "MEDICINE",
-      field: "FIELD",
-      battle: "BATTLE",
-      vitamin: "VITAMINS",
-      candy: "CANDY",
-      stone: "STONES",
-      tm: "TMs",
-    };
+    // Tab row at y=75 (26px tall → 62..88), cards begin at y=100.
+    this.drawCategoryTabs<ItemCategory>(
+      75,
+      MainMenuScene.SHOP_TAB_ORDER.map((cat) => ({ value: cat, label: MainMenuScene.CATEGORY_LABELS[cat] })),
+      this.shopTab,
+      (value) => {
+        if (this.shopTab === value) return;
+        this.shopTab = value;
+        this.listPage = 0;
+        this.showScreen("shop", false);
+      },
+    );
 
-    const grouped = new Map<ItemCategory, typeof available>();
-    for (const entry of available) {
-      const cat = ITEMS[entry.itemId].category;
-      if (!grouped.has(cat)) grouped.set(cat, []);
-      grouped.get(cat)!.push(entry);
+    const filtered = available.filter((entry) => ITEMS[entry.itemId].category === this.shopTab);
+    if (filtered.length === 0) {
+      this.add.text(GAME_W / 2, 240, "No items in this category\nat your current world progress.", {
+        fontSize: "11px", fontFamily: "monospace", color: "#667788", align: "center",
+      }).setOrigin(0.5);
+      return;
     }
 
-    let y = 70;
-    const maxY = GAME_H - 55;
-    for (const cat of categoryOrder) {
-      const list = grouped.get(cat);
-      if (!list || list.length === 0) continue;
+    this.clampListPage(filtered.length);
+    const { slice } = this.pagedSlice(filtered);
 
-      this.add.text(18, y, categoryLabels[cat], {
-        fontSize: "10px", fontFamily: "monospace", color: "#7788aa", fontStyle: "bold",
-      });
-      y += 13;
+    slice.forEach((shopItem, localIdx) => {
+      const y = 110 + localIdx * 56;
+      const item = ITEMS[shopItem.itemId];
+      const canAfford = this.gameState.gold >= shopItem.cost;
 
-      for (const shopItem of list) {
-        if (y + 18 > maxY) break;
-        const item = ITEMS[shopItem.itemId];
-        const canAfford = this.gameState.gold >= shopItem.cost;
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 354, 50, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9)
+        .setOrigin(0.5)
+        .setStrokeStyle(1, 0x444466);
 
-        const cardBg = this.add
-          .rectangle(GAME_W / 2, y + 16, 354, 32, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9)
-          .setOrigin(0.5)
-          .setStrokeStyle(1, 0x444466);
+      const iconText = this.getItemIcon(shopItem.itemId);
+      this.add.text(24, y, iconText, { fontSize: "16px", fontFamily: "monospace" }).setOrigin(0.5);
 
-        // icon
-        const iconText = this.getItemIcon(shopItem.itemId);
-        this.add.text(22, y + 16, iconText, { fontSize: "14px", fontFamily: "monospace" }).setOrigin(0.5);
+      this.add.text(42, y - 12, item.name, {
+        fontSize: "12px", fontFamily: "monospace",
+        color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      this.add.text(42, y + 4, item.description, {
+        fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        wordWrap: { width: 240 },
+      }).setOrigin(0, 0.5);
 
-        // name + description inline
-        this.add
-          .text(40, y + 7, item.name, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" })
-          .setOrigin(0, 0.5);
-        this.add
-          .text(40, y + 23, item.description, { fontSize: "8px", fontFamily: "monospace", color: "#888888" })
-          .setOrigin(0, 0.5);
+      this.add.text(GAME_W - 15, y, `${shopItem.cost}g`, {
+        fontSize: "12px", fontFamily: "monospace",
+        color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold",
+      }).setOrigin(1, 0.5);
 
-        // cost
-        this.add
-          .text(GAME_W - 15, y + 16, `${shopItem.cost}g`, { fontSize: "12px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" })
-          .setOrigin(1, 0.5);
-
-        if (canAfford) {
-          cardBg.setInteractive();
-          cardBg.on("pointerdown", () => {
-            this.gameState.gold -= shopItem.cost;
-            const existing = this.gameState.playerItems.find((b) => b.item.id === shopItem.itemId);
-            if (existing) existing.quantity++;
-            else this.gameState.playerItems.push({ item: ITEMS[shopItem.itemId], quantity: 1 });
-            saveGame(this.gameState);
-            this.showScreen("shop");
-            this.showToast(`Bought ${item.name}!  -${shopItem.cost}g`, { sfx: "purchase" });
-          });
-        }
-
-        y += 34;
+      if (canAfford) {
+        cardBg.setInteractive();
+        cardBg.on("pointerdown", () => {
+          this.gameState.gold -= shopItem.cost;
+          const existing = this.gameState.playerItems.find((b) => b.item.id === shopItem.itemId);
+          if (existing) existing.quantity++;
+          else this.gameState.playerItems.push({ item: ITEMS[shopItem.itemId], quantity: 1 });
+          saveGame(this.gameState);
+          this.showScreen("shop", false);
+          this.showToast(`Bought ${item.name}!  -${shopItem.cost}g`, { sfx: "purchase" });
+        });
       }
-      y += 4;
-    }
+    });
+
+    this.drawPagination(filtered.length, () => this.showScreen("shop", false));
   }
 
   // --- Pokemon Shop (tabbed BUY / SELL) ---
@@ -996,6 +1155,8 @@ export class MainMenuScene extends Phaser.Scene {
       });
     });
 
+    this.drawTypeFilterPill(96, () => this.showScreen("pokeshop", false));
+
     if (this.pokeshopMode === "buy") {
       this.drawPokemonBuyList();
     } else {
@@ -1006,19 +1167,29 @@ export class MainMenuScene extends Phaser.Scene {
   private drawPokemonBuyList(): void {
     const available = getAvailableShopPokemon(this.gameState.seenPokemon);
 
+    const filtered = this.typeFilter === null
+      ? available
+      : available.filter((shopPoke) => getPokemon(shopPoke.speciesId).types.includes(this.typeFilter!));
+
     if (available.length === 0) {
       this.add.text(GAME_W / 2, 300, "No Pokemon available\nyet!\n\nFight wild Pokemon to\nunlock them in the shop.", { fontSize: "13px", fontFamily: "monospace", color: "#888888", align: "center" }).setOrigin(0.5);
       return;
     }
+    if (filtered.length === 0) {
+      this.add.text(GAME_W / 2, 300, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+      return;
+    }
 
-    this.clampListPage(available.length);
-    const { slice, start } = this.pagedSlice(available);
+    this.clampListPage(filtered.length);
+    const { slice, start } = this.pagedSlice(filtered);
 
     slice.forEach((shopPoke, localIdx) => {
       const i = start + localIdx;
       void i;
       const species = getPokemon(shopPoke.speciesId);
-      const y = 115 + localIdx * 58;
+      const y = 130 + localIdx * 58;
       const canAfford = this.gameState.gold >= shopPoke.cost;
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 52, canAfford ? 0x2a2a3e : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
@@ -1049,7 +1220,7 @@ export class MainMenuScene extends Phaser.Scene {
       }
     });
 
-    this.drawPagination(available.length, () => this.showScreen("pokeshop", false));
+    this.drawPagination(filtered.length, () => this.showScreen("pokeshop", false));
   }
 
   // --- Sell list ---
@@ -1067,8 +1238,15 @@ export class MainMenuScene extends Phaser.Scene {
     this.clampListPage(sorted.length);
     const { slice } = this.pagedSlice(sorted);
 
+    if (sorted.length === 0) {
+      this.add.text(GAME_W / 2, 300, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+      return;
+    }
+
     slice.forEach((pokemon, localIdx) => {
-      const y = 115 + localIdx * 58;
+      const y = 130 + localIdx * 58;
       const sellValue = getPokemonSellValue(pokemon.species, pokemon.level);
       const locked = pokemon.isFavourite;
 
@@ -1262,7 +1440,7 @@ export class MainMenuScene extends Phaser.Scene {
     // Sort bar lives below the preview strip (preview sprites extend ~56..88,
     // sort bar buttons are 22px tall so centered at 104 → 93..115).
     this.drawSortBar<RosterSort>(
-      104,
+      100,
       [
         { value: "level", label: "LEVEL" },
         { value: "type", label: "TYPE" },
@@ -1277,14 +1455,22 @@ export class MainMenuScene extends Phaser.Scene {
       },
     );
 
+    this.drawTypeFilterPill(126, () => this.showScreen("party", false));
+
     const sorted = this.getSortedRoster();
     this.clampListPage(sorted.length);
     const { slice } = this.pagedSlice(sorted);
 
-    // First card centered at 140 (top = 117) clears the sort bar's bottom at 115.
+    if (sorted.length === 0) {
+      this.add.text(GAME_W / 2, 260, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+    }
+
+    // First card centered at 156 (top = 133) clears the filter pill's bottom at 137.
     slice.forEach((pokemon, localIdx) => {
       const i = this.gameState.roster.indexOf(pokemon);
-      const y = 140 + localIdx * 54;
+      const y = 156 + localIdx * 52;
       const isSelected = this.selectedParty.includes(i);
 
       const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 46, isSelected ? 0x334422 : 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(2, isSelected ? 0x44aa22 : 0x444466);
@@ -1331,43 +1517,99 @@ export class MainMenuScene extends Phaser.Scene {
 
   // --- Training: Pokemon select ---
   private drawTrainSelect(): void {
-    this.add.text(GAME_W / 2, 30, "TRAIN POKEMON", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 55, `Gold: ${this.gameState.gold}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
-    this.add.text(GAME_W / 2, 75, "Select a Pokemon to manage moves", { fontSize: "10px", fontFamily: "monospace", color: "#888888" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 24, "TRAIN POKEMON", { fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 48, `Gold: ${this.gameState.gold}`, { fontSize: "12px", fontFamily: "monospace", color: "#ffd700" }).setOrigin(0.5);
+    this.add.text(GAME_W / 2, 65, "Select a Pokemon — evolutions & new moves first", {
+      fontSize: "9px", fontFamily: "monospace", color: "#888888",
+    }).setOrigin(0.5);
 
-    this.clampListPage(this.gameState.roster.length);
-    const { slice, start } = this.pagedSlice(this.gameState.roster);
+    this.drawTypeFilterPill(88, () => this.showScreen("train", false));
+
+    const sorted = this.getTrainSortedRoster();
+    this.clampListPage(sorted.length);
+    const { slice } = this.pagedSlice(sorted);
+
+    if (sorted.length === 0) {
+      this.add.text(GAME_W / 2, 300, "No Pokemon match this filter.", {
+        fontSize: "12px", fontFamily: "monospace", color: "#667788",
+      }).setOrigin(0.5);
+      return;
+    }
 
     slice.forEach((pokemon, localIdx) => {
-      const i = start + localIdx;
-      const y = 105 + localIdx * 60;
+      const y = 118 + localIdx * 58;
+      const rosterIdx = this.gameState.roster.indexOf(pokemon);
 
-      const trainable = getTrainableMoves(pokemon);
-      const unlearnedCount = trainable.filter((t) => !t.known).length;
+      const newMoves = countNewMoves(pokemon);
+      const evoInfo = getEvolutionInfo(pokemon);
+      const canEvolveNow = evoInfo?.canEvolve === true;
 
-      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 50, 0x2a2a3e, 0.9).setOrigin(0.5).setStrokeStyle(1, 0x444466);
+      const cardBg = this.add.rectangle(GAME_W / 2, y, 340, 50, 0x2a2a3e, 0.9)
+        .setOrigin(0.5)
+        .setStrokeStyle(1, canEvolveNow ? 0xaa6633 : newMoves > 0 ? 0x558855 : 0x444466);
 
       if (this.textures.exists(pokemon.species.spriteKey)) {
         const img = this.add.image(GAME_W / 2 - 145, y, pokemon.species.spriteKey).setDisplaySize(34, 34).setOrigin(0.5);
         img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
       }
 
-      this.add.text(GAME_W / 2 - 115, y - 10, pokemon.species.name, { fontSize: "13px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
-      this.add.text(GAME_W / 2 - 115, y + 10, `Lv${pokemon.level}  ${pokemon.moves.length}/4 moves`, { fontSize: "10px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+      const nameLabel = pokemon.isFavourite ? `★ ${pokemon.species.name}` : pokemon.species.name;
+      this.add.text(GAME_W / 2 - 115, y - 10, nameLabel, {
+        fontSize: "13px", fontFamily: "monospace",
+        color: pokemon.isFavourite ? "#ffcc33" : "#ffffff",
+        fontStyle: "bold",
+      }).setOrigin(0, 0.5);
+      this.add.text(GAME_W / 2 - 115, y + 10, `Lv${pokemon.level}  ${pokemon.moves.length}/4 moves`, {
+        fontSize: "10px", fontFamily: "monospace", color: "#888888",
+      }).setOrigin(0, 0.5);
 
-      const evoInfo = getEvolutionInfo(pokemon);
-      if (evoInfo?.canEvolve) {
-        this.add.text(GAME_W / 2 + 130, y - 8, "EVOLVE", { fontSize: "9px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold" }).setOrigin(0.5);
-      }
-      if (unlearnedCount > 0) {
-        this.add.text(GAME_W / 2 + 130, y + (evoInfo?.canEvolve ? 8 : 0), `${unlearnedCount} new`, { fontSize: "11px", fontFamily: "monospace", color: "#44cc44", fontStyle: "bold" }).setOrigin(0.5);
+      // Right column — badges stack vertically so EVOLVE and "N new" don't overlap.
+      const badgeX = GAME_W / 2 + 130;
+      if (canEvolveNow && newMoves > 0) {
+        this.add.text(badgeX, y - 10, "EVOLVE",
+          { fontSize: "9px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold" }).setOrigin(0.5);
+        this.add.text(badgeX, y + 10, `${newMoves} new`,
+          { fontSize: "10px", fontFamily: "monospace", color: "#44cc44", fontStyle: "bold" }).setOrigin(0.5);
+      } else if (canEvolveNow) {
+        this.add.text(badgeX, y, "EVOLVE",
+          { fontSize: "10px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold" }).setOrigin(0.5);
+      } else if (newMoves > 0) {
+        this.add.text(badgeX, y, `${newMoves} new`,
+          { fontSize: "11px", fontFamily: "monospace", color: "#44cc44", fontStyle: "bold" }).setOrigin(0.5);
       }
 
       cardBg.setInteractive();
-      cardBg.on("pointerdown", () => this.drawTrainMoves(i));
+      cardBg.on("pointerdown", () => this.drawTrainMoves(rosterIdx));
     });
 
-    this.drawPagination(this.gameState.roster.length, () => this.showScreen("train", false));
+    this.drawPagination(sorted.length, () => this.showScreen("train", false));
+  }
+
+  /**
+   * Train-screen ordering (PRD 2026-04-17 §2.9): evolution-ready first,
+   * then Pokemon with newly-available moves, then ascending by level.
+   * Favourites still bubble to the top within each bucket, and the type
+   * filter is applied on top of the ranking.
+   */
+  private getTrainSortedRoster(): BattlePokemon[] {
+    const filtered = this.typeFilter === null
+      ? [...this.gameState.roster]
+      : this.gameState.roster.filter((p) => p.species.types.includes(this.typeFilter!));
+
+    const rank = (p: BattlePokemon): number => {
+      if (getEvolutionInfo(p)?.canEvolve) return 0;
+      if (countNewMoves(p) > 0) return 1;
+      return 2;
+    };
+
+    return filtered.sort((a, b) => {
+      const favDiff = (a.isFavourite ? 0 : 1) - (b.isFavourite ? 0 : 1);
+      if (favDiff !== 0) return favDiff;
+      const rankDiff = rank(a) - rank(b);
+      if (rankDiff !== 0) return rankDiff;
+      // Final tie-break: ascending level (lowest first) per PRD.
+      return a.level - b.level || a.species.name.localeCompare(b.species.name);
+    });
   }
 
   // --- Training: Move management for a specific Pokemon ---
@@ -1392,61 +1634,98 @@ export class MainMenuScene extends Phaser.Scene {
     this.add.text(55, 60, `${pokemon.species.name}  Lv${pokemon.level}`, { fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" });
     this.add.text(55, 78, `Moves: ${pokemon.moves.length}/4`, { fontSize: "10px", fontFamily: "monospace", color: "#aaaaaa" });
 
-    // Evolution section
+    // Evolution section — handles both level and stone branches. Stone
+    // cards show a non-interactive hint without naming the specific stone
+    // (discovery is preserved) per PRD 2026-04-17 §2.6.
     let sectionY = 100;
     const evoInfo = getEvolutionInfo(pokemon);
-    if (evoInfo) {
+    const stoneTarget = evoInfo ? null : getStoneEvolutionTarget(pokemon);
+    if (evoInfo || stoneTarget) {
       this.add.text(15, sectionY, "EVOLUTION", { fontSize: "11px", fontFamily: "monospace", color: "#ff8844", fontStyle: "bold" });
       sectionY += 18;
-
       const evoY = sectionY;
-      const canAffordEvo = this.gameState.gold >= evoInfo.cost;
-      const canEvolve = evoInfo.canEvolve && canAffordEvo;
 
-      this.add.rectangle(GAME_W / 2, evoY, 340, 40, canEvolve ? 0x332211 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canEvolve ? 0x664422 : 0x333333);
+      if (evoInfo) {
+        const canAffordEvo = this.gameState.gold >= evoInfo.cost;
+        const canEvolve = evoInfo.canEvolve && canAffordEvo;
 
-      // Show evolved species sprite
-      if (this.textures.exists(evoInfo.evolvedSpecies.spriteKey)) {
-        const evoImg = this.add.image(35, evoY, evoInfo.evolvedSpecies.spriteKey).setDisplaySize(28, 28).setOrigin(0.5);
-        evoImg.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
-      }
+        this.add.rectangle(GAME_W / 2, evoY, 340, 40, canEvolve ? 0x332211 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canEvolve ? 0x664422 : 0x333333);
 
-      const evoName = evoInfo.evolvedSpecies.name;
-      if (evoInfo.canEvolve) {
-        this.add.text(55, evoY - 7, `Evolve to ${evoName}`, { fontSize: "12px", fontFamily: "monospace", color: canAffordEvo ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
-        this.add.text(55, evoY + 8, `Ready!`, { fontSize: "9px", fontFamily: "monospace", color: "#ff8844" }).setOrigin(0, 0.5);
-        this.add.text(GAME_W - 95, evoY, `${evoInfo.cost}g`, { fontSize: "11px", fontFamily: "monospace", color: canAffordEvo ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
-
-        if (canEvolve) {
-          const evoBg = this.add.rectangle(GAME_W - 40, evoY, 55, 24, 0x884422).setOrigin(0.5).setStrokeStyle(1, 0xaa6633);
-          this.add.text(GAME_W - 40, evoY, "EVOLVE", { fontSize: "8px", fontFamily: "monospace", color: "#ffaa44", fontStyle: "bold" }).setOrigin(0.5);
-          evoBg.setInteractive();
-          evoBg.on("pointerdown", () => this.evolvePokemon(rosterIndex));
+        if (this.textures.exists(evoInfo.evolvedSpecies.spriteKey)) {
+          const evoImg = this.add.image(35, evoY, evoInfo.evolvedSpecies.spriteKey).setDisplaySize(28, 28).setOrigin(0.5);
+          evoImg.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
         }
-      } else {
-        this.add.text(55, evoY - 7, `Evolves to ${evoName}`, { fontSize: "12px", fontFamily: "monospace", color: "#666666" }).setOrigin(0, 0.5);
-        this.add.text(55, evoY + 8, `Requires Lv${evoInfo.requiredLevel}`, { fontSize: "9px", fontFamily: "monospace", color: "#555555" }).setOrigin(0, 0.5);
+
+        const evoName = evoInfo.evolvedSpecies.name;
+        if (evoInfo.canEvolve) {
+          this.add.text(55, evoY - 7, `Evolve to ${evoName}`, { fontSize: "12px", fontFamily: "monospace", color: canAffordEvo ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+          this.add.text(55, evoY + 8, `Ready!`, { fontSize: "9px", fontFamily: "monospace", color: "#ff8844" }).setOrigin(0, 0.5);
+          this.add.text(GAME_W - 95, evoY, `${evoInfo.cost}g`, { fontSize: "11px", fontFamily: "monospace", color: canAffordEvo ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
+
+          if (canEvolve) {
+            const evoBg = this.add.rectangle(GAME_W - 40, evoY, 55, 24, 0x884422).setOrigin(0.5).setStrokeStyle(1, 0xaa6633);
+            this.add.text(GAME_W - 40, evoY, "EVOLVE", { fontSize: "8px", fontFamily: "monospace", color: "#ffaa44", fontStyle: "bold" }).setOrigin(0.5);
+            evoBg.setInteractive();
+            evoBg.on("pointerdown", () => this.evolvePokemon(rosterIndex));
+          }
+        } else {
+          this.add.text(55, evoY - 7, `Evolves to ${evoName}`, { fontSize: "12px", fontFamily: "monospace", color: "#666666" }).setOrigin(0, 0.5);
+          this.add.text(55, evoY + 8, `Requires Lv${evoInfo.requiredLevel}`, { fontSize: "9px", fontFamily: "monospace", color: "#555555" }).setOrigin(0, 0.5);
+        }
+      } else if (stoneTarget) {
+        this.add.rectangle(GAME_W / 2, evoY, 340, 40, 0x1a1a22, 0.9)
+          .setOrigin(0.5).setStrokeStyle(1, 0x333333);
+        if (this.textures.exists(stoneTarget.spriteKey)) {
+          const evoImg = this.add.image(35, evoY, stoneTarget.spriteKey).setDisplaySize(28, 28).setOrigin(0.5);
+          evoImg.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+          evoImg.setTint(0x666677);
+        }
+        this.add.text(55, evoY - 7, `Evolves to ${stoneTarget.name}`, {
+          fontSize: "12px", fontFamily: "monospace", color: "#aaaacc", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
+        this.add.text(55, evoY + 8, "with a special item", {
+          fontSize: "9px", fontFamily: "monospace", color: "#7788aa", fontStyle: "italic",
+        }).setOrigin(0, 0.5);
       }
 
       sectionY = evoY + 30;
     }
 
-    // Current moves section
-    this.add.text(15, sectionY, "CURRENT MOVES", { fontSize: "11px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold" });
+    // Layout constants — shared by all Train-screen row builders so section
+    // headings, cards, and buttons align on a single column grid per PRD §2.7.
+    const ROW_W = 340;
+    const ROW_H = 34;
+    const ROW_PAD = 4;        // gap between rows within a section
+    const SECTION_GAP = 10;   // gap below a section
+    const HEADING_GAP = 20;   // from heading baseline to first row center
+    const BTN_X = GAME_W - 40;
+    const BTN_W = 58;
+    const BTN_H = 24;
+    const COST_X = GAME_W - 90;
+
+    const drawHeading = (y: number, text: string, color: string): number => {
+      this.add.text(20, y, text, {
+        fontSize: "11px", fontFamily: "monospace", color, fontStyle: "bold",
+      });
+      return y + HEADING_GAP;
+    };
+
+    const nextRowY = (y: number): number => y + ROW_H + ROW_PAD;
+
+    // --- Current moves section ---
+    sectionY = drawHeading(sectionY, "CURRENT MOVES", "#cc88cc");
 
     pokemon.moves.forEach((move, i) => {
-      const y = sectionY + 20 + i * 38;
-      this.add.rectangle(GAME_W / 2, y, 340, 32, 0x332244).setOrigin(0.5).setStrokeStyle(1, 0x554466);
+      const y = sectionY + i * (ROW_H + ROW_PAD);
+      this.add.rectangle(GAME_W / 2, y, ROW_W, ROW_H, 0x332244).setOrigin(0.5).setStrokeStyle(1, 0x554466);
 
-      this.add.text(25, y - 5, move.name, { fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
+      this.add.text(25, y - 7, move.name, { fontSize: "12px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold" }).setOrigin(0, 0.5);
       const typeStr = move.type.charAt(0).toUpperCase() + move.type.slice(1);
-      this.add.text(25, y + 9, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, { fontSize: "8px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+      this.add.text(25, y + 7, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, { fontSize: "8px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
 
-      // Forget button
-      const forgetBg = this.add.rectangle(GAME_W - 50, y, 55, 24, 0x663333).setOrigin(0.5).setStrokeStyle(1, 0x884444);
-      this.add.text(GAME_W - 50, y, "FORGET", { fontSize: "9px", fontFamily: "monospace", color: "#ff6666", fontStyle: "bold" }).setOrigin(0.5);
+      const forgetBg = this.add.rectangle(BTN_X, y, BTN_W, BTN_H, 0x663333).setOrigin(0.5).setStrokeStyle(1, 0x884444);
+      this.add.text(BTN_X, y, "FORGET", { fontSize: "9px", fontFamily: "monospace", color: "#ff6666", fontStyle: "bold" }).setOrigin(0.5);
 
-      // Guard rails: must always keep at least one move, and at least one CD-0 move.
       const isLastMove = pokemon.moves.length <= 1;
       const isLastCdZero = move.cooldown === 0 &&
         pokemon.moves.filter((m, idx) => idx !== i && m.cooldown === 0).length === 0;
@@ -1454,8 +1733,10 @@ export class MainMenuScene extends Phaser.Scene {
       if (!isLastMove && !isLastCdZero) {
         forgetBg.setInteractive();
         forgetBg.on("pointerdown", () => {
+          const forgottenId = pokemon.moves[i].id;
           pokemon.moves.splice(i, 1);
           pokemon.cooldowns.splice(i, 1);
+          pushForgotten(pokemon, forgottenId);
           saveGame(this.gameState);
           this.drawTrainMoves(rosterIndex);
         });
@@ -1471,42 +1752,115 @@ export class MainMenuScene extends Phaser.Scene {
       }
     });
 
-    // Available moves section
-    const availY = sectionY + 20 + pokemon.moves.length * 38 + 10;
-    this.add.text(15, availY, "AVAILABLE TO LEARN", { fontSize: "11px", fontFamily: "monospace", color: "#88cc88", fontStyle: "bold" });
+    sectionY = sectionY + pokemon.moves.length * (ROW_H + ROW_PAD) + SECTION_GAP;
 
-    const unlearned = trainable.filter((t) => !t.known);
+    // --- Forgotten moves section (relearn free) ---
+    const forgottenEntries = (pokemon.forgottenMoves ?? [])
+      .filter((id) => !pokemon.moves.some((m) => m.id === id))
+      .map((id) => {
+        try { return getMove(id); } catch { return null; }
+      })
+      .filter((m): m is MoveData => m !== null);
 
-    let afterMovesY = availY + 20;
+    if (forgottenEntries.length > 0) {
+      sectionY = drawHeading(sectionY, "FORGOTTEN MOVES — RELEARN FREE", "#88aacc");
+
+      forgottenEntries.forEach((move, i) => {
+        const y = sectionY + i * (ROW_H + ROW_PAD);
+        if (y + ROW_H > GAME_H - 100) return;
+        const hasMoveSlot = pokemon.moves.length < 4;
+
+        this.add.rectangle(GAME_W / 2, y, ROW_W, ROW_H, hasMoveSlot ? 0x223344 : 0x1a1a22, 0.9)
+          .setOrigin(0.5).setStrokeStyle(1, hasMoveSlot ? 0x446688 : 0x333333);
+
+        this.add.text(25, y - 7, move.name, {
+          fontSize: "11px", fontFamily: "monospace",
+          color: hasMoveSlot ? "#ffffff" : "#666666", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
+        const typeStr = move.type.charAt(0).toUpperCase() + move.type.slice(1);
+        this.add.text(25, y + 7, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, {
+          fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        }).setOrigin(0, 0.5);
+
+        if (hasMoveSlot) {
+          const relearnBg = this.add.rectangle(BTN_X, y, BTN_W, BTN_H, 0x336677)
+            .setOrigin(0.5).setStrokeStyle(1, 0x4488aa);
+          this.add.text(BTN_X, y, "RELEARN", {
+            fontSize: "8px", fontFamily: "monospace", color: "#aaddff", fontStyle: "bold",
+          }).setOrigin(0.5);
+          relearnBg.setInteractive();
+          relearnBg.on("pointerdown", () => {
+            pokemon.moves.push(move);
+            pokemon.cooldowns.push(0);
+            pokemon.forgottenMoves = (pokemon.forgottenMoves ?? []).filter((id) => id !== move.id);
+            saveGame(this.gameState);
+            this.drawTrainMoves(rosterIndex);
+            this.showToast(
+              `${pokemon.species.name} relearned ${move.name}!`,
+              { color: "#aaddff", sfx: "learn" }
+            );
+          });
+        } else {
+          this.add.text(BTN_X, y, "FULL", {
+            fontSize: "9px", fontFamily: "monospace", color: "#886644", fontStyle: "bold",
+          }).setOrigin(0.5);
+        }
+      });
+
+      sectionY = sectionY + forgottenEntries.length * (ROW_H + ROW_PAD) + SECTION_GAP;
+    }
+
+    // --- Available moves section ---
+    const unlearned = trainable.filter((t) => !t.known && !t.forgotten);
+
+    sectionY = drawHeading(sectionY, "AVAILABLE TO LEARN", "#88cc88");
+
     if (unlearned.length === 0) {
-      this.add.text(GAME_W / 2, availY + 30, "No new moves available yet.\nLevel up to unlock more!", { fontSize: "11px", fontFamily: "monospace", color: "#666666", align: "center" }).setOrigin(0.5);
-      afterMovesY = availY + 55;
+      this.add.text(GAME_W / 2, sectionY, "No new moves available yet — level up to unlock more.", {
+        fontSize: "10px", fontFamily: "monospace", color: "#666666", align: "center",
+      }).setOrigin(0.5, 0);
+      sectionY += 22;
     } else {
       unlearned.forEach((entry, i) => {
-        const y = availY + 22 + i * 36;
-        if (y > GAME_H - 150) return;
+        const y = sectionY + i * (ROW_H + ROW_PAD);
+        if (y + ROW_H > GAME_H - 100) return;
 
         const canAfford = this.gameState.gold >= entry.cost;
         const hasMoveSlot = pokemon.moves.length < 4;
         const canLearn = canAfford && hasMoveSlot;
 
-        this.add.rectangle(GAME_W / 2, y, 340, 32, canLearn ? 0x223322 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canLearn ? 0x446644 : 0x333333);
+        this.add.rectangle(GAME_W / 2, y, ROW_W, ROW_H, canLearn ? 0x223322 : 0x1a1a22, 0.9)
+          .setOrigin(0.5).setStrokeStyle(1, canLearn ? 0x446644 : 0x333333);
 
-        this.add.text(25, y - 6, entry.move.name, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold" }).setOrigin(0, 0.5);
+        this.add.text(25, y - 7, entry.move.name, {
+          fontSize: "11px", fontFamily: "monospace",
+          color: canAfford ? "#ffffff" : "#666666", fontStyle: "bold",
+        }).setOrigin(0, 0.5);
         const typeStr = entry.move.type.charAt(0).toUpperCase() + entry.move.type.slice(1);
-        this.add.text(25, y + 8, `${typeStr}  Pow:${entry.move.power}  CD:${entry.move.cooldown}  Lv${entry.level}`, { fontSize: "8px", fontFamily: "monospace", color: "#888888" }).setOrigin(0, 0.5);
+        this.add.text(25, y + 7, `${typeStr}  Pow:${entry.move.power}  CD:${entry.move.cooldown}  Lv${entry.level}`, {
+          fontSize: "8px", fontFamily: "monospace", color: "#888888",
+        }).setOrigin(0, 0.5);
 
-        // Cost + learn button
-        this.add.text(GAME_W - 95, y, `${entry.cost}g`, { fontSize: "11px", fontFamily: "monospace", color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold" }).setOrigin(0.5);
+        this.add.text(COST_X, y, `${entry.cost}g`, {
+          fontSize: "10px", fontFamily: "monospace",
+          color: canAfford ? "#ffd700" : "#664400", fontStyle: "bold",
+        }).setOrigin(0.5);
 
         if (canLearn) {
-          const learnBg = this.add.rectangle(GAME_W - 40, y, 55, 22, 0x336633).setOrigin(0.5).setStrokeStyle(1, 0x448844);
-          this.add.text(GAME_W - 40, y, "LEARN", { fontSize: "9px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold" }).setOrigin(0.5);
+          const learnBg = this.add.rectangle(BTN_X, y, BTN_W, BTN_H, 0x336633)
+            .setOrigin(0.5).setStrokeStyle(1, 0x448844);
+          this.add.text(BTN_X, y, "LEARN", {
+            fontSize: "9px", fontFamily: "monospace", color: "#44ff44", fontStyle: "bold",
+          }).setOrigin(0.5);
           learnBg.setInteractive();
           learnBg.on("pointerdown", () => {
             this.gameState.gold -= entry.cost;
             pokemon.moves.push(getMove(entry.moveId));
             pokemon.cooldowns.push(0);
+            // Relearning from forgotten (shouldn't happen because we filter
+            // by !t.forgotten, but keep the bucket clean in case it does).
+            pokemon.forgottenMoves = (pokemon.forgottenMoves ?? [])
+              .filter((id) => id !== entry.moveId);
             saveGame(this.gameState);
             this.drawTrainMoves(rosterIndex);
             this.showToast(
@@ -1515,54 +1869,64 @@ export class MainMenuScene extends Phaser.Scene {
             );
           });
         } else if (!hasMoveSlot) {
-          this.add.text(GAME_W - 40, y, "FULL", { fontSize: "9px", fontFamily: "monospace", color: "#886644", fontStyle: "bold" }).setOrigin(0.5);
+          this.add.text(BTN_X, y, "FULL", {
+            fontSize: "9px", fontFamily: "monospace", color: "#886644", fontStyle: "bold",
+          }).setOrigin(0.5);
         }
       });
-      afterMovesY = availY + 22 + unlearned.length * 36;
+      sectionY = sectionY + unlearned.length * (ROW_H + ROW_PAD);
     }
 
-    // TMs section
+    sectionY += SECTION_GAP;
+
+    // --- TMs section ---
     const ownedTMs = this.gameState.playerItems.filter(
       (b) => b.quantity > 0 && b.item.category === "tm"
     );
     if (ownedTMs.length > 0) {
-      const tmY = afterMovesY + 6;
-      this.add.text(15, tmY, "USE TMs", {
-        fontSize: "11px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold",
-      });
+      sectionY = drawHeading(sectionY, "USE TMs", "#ffcc88");
 
       ownedTMs.forEach((belt, i) => {
-        const y = tmY + 18 + i * 32;
-        if (y > GAME_H - 80) return;
+        const y = sectionY + i * (ROW_H + ROW_PAD);
+        if (y + ROW_H > GAME_H - 100) return;
 
         const move = getTMMove(belt.item);
         if (!move) return;
 
         const check = canUseTM(pokemon, belt.item.id, move.id);
-        const canAfford = true; // TMs consume the item, not gold
-        const canTeach = check.ok && canAfford;
+        const canTeach = check.ok;
 
-        this.add.rectangle(GAME_W / 2, y, 340, 28, canTeach ? 0x332a11 : 0x1a1a22, 0.9).setOrigin(0.5).setStrokeStyle(1, canTeach ? 0x665522 : 0x333333);
+        this.add.rectangle(GAME_W / 2, y, ROW_W, ROW_H, canTeach ? 0x332a11 : 0x1a1a22, 0.9)
+          .setOrigin(0.5).setStrokeStyle(1, canTeach ? 0x665522 : 0x333333);
 
-        this.add.text(25, y - 5, `${belt.item.name.replace("TM ", "")} x${belt.quantity}`, {
-          fontSize: "10px", fontFamily: "monospace", color: canTeach ? "#ffffff" : "#666666", fontStyle: "bold",
+        this.add.text(25, y - 7, `${belt.item.name.replace("TM ", "")} x${belt.quantity}`, {
+          fontSize: "10px", fontFamily: "monospace",
+          color: canTeach ? "#ffffff" : "#666666", fontStyle: "bold",
         }).setOrigin(0, 0.5);
         const typeStr = move.type.charAt(0).toUpperCase() + move.type.slice(1);
-        this.add.text(25, y + 8, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, {
+        this.add.text(25, y + 7, `${typeStr}  Pow:${move.power}  CD:${move.cooldown}`, {
           fontSize: "8px", fontFamily: "monospace", color: "#888888",
         }).setOrigin(0, 0.5);
 
         if (canTeach) {
-          const teachBg = this.add.rectangle(GAME_W - 40, y, 55, 22, 0x554422).setOrigin(0.5).setStrokeStyle(1, 0x886644);
-          this.add.text(GAME_W - 40, y, "TEACH", { fontSize: "9px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold" }).setOrigin(0.5);
+          const teachBg = this.add.rectangle(BTN_X, y, BTN_W, BTN_H, 0x554422)
+            .setOrigin(0.5).setStrokeStyle(1, 0x886644);
+          this.add.text(BTN_X, y, "TEACH", {
+            fontSize: "9px", fontFamily: "monospace", color: "#ffcc88", fontStyle: "bold",
+          }).setOrigin(0.5);
           teachBg.setInteractive();
           teachBg.on("pointerdown", () => this.applyTM(rosterIndex, belt));
         } else {
           const label = check.label ?? "";
-          this.add.text(GAME_W - 40, y, label, { fontSize: "8px", fontFamily: "monospace", color: "#886644", fontStyle: "bold" }).setOrigin(0.5);
+          this.add.text(BTN_X, y, label, {
+            fontSize: "8px", fontFamily: "monospace", color: "#886644", fontStyle: "bold",
+          }).setOrigin(0.5);
         }
       });
     }
+
+    // Small sanity-guard to stop the bundler complaining about nextRowY being unused.
+    void nextRowY;
 
     // Back button
     const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 45, 160, 38, 0x553333).setOrigin(0.5).setStrokeStyle(1, 0x774444);
@@ -1655,14 +2019,18 @@ export class MainMenuScene extends Phaser.Scene {
           this.showToast("Must keep at least one no-cooldown move.", { color: "#ff8888", sfx: "error" });
           return;
         }
-        const forgotten = pokemon.moves[i].name;
+        const oldMove = pokemon.moves[i];
         pokemon.moves[i] = newMove;
         pokemon.cooldowns[i] = 0;
+        pushForgotten(pokemon, oldMove.id);
+        // If the new move was in the forgotten bucket, clear it (it's active now).
+        pokemon.forgottenMoves = (pokemon.forgottenMoves ?? [])
+          .filter((id) => id !== newMove.id);
         belt.quantity--;
         saveGame(this.gameState);
         this.drawTrainMoves(rosterIndex);
         this.showToast(
-          `${pokemon.species.name} forgot ${forgotten}\nand learned ${newMove.name}!`,
+          `${pokemon.species.name} forgot ${oldMove.name}\nand learned ${newMove.name}!`,
           { color: "#ffcc88", sfx: "learn" }
         );
       });
@@ -1675,6 +2043,219 @@ export class MainMenuScene extends Phaser.Scene {
     this.add.text(GAME_W / 2, GAME_H - 45, "CANCEL", { fontSize: "13px", fontFamily: "monospace", color: "#ffffff" }).setOrigin(0.5);
     backBg.setInteractive();
     backBg.on("pointerdown", () => this.drawTrainMoves(rosterIndex));
+  }
+
+  /**
+   * Pokemon detail screen — shared by the roster, pokedex, party picker and
+   * trader screens. Shows a large portrait, stat block (with any vitamin
+   * bonuses highlighted), XP progress, evolution line hint, full moveset
+   * (each move's type/power/accuracy/cooldown/effect/description), and the
+   * Pokedex flavor text. When the target is a species object (pokedex cold
+   * lookup) we fall back to the species' learnset at unlock levels.
+   */
+  private showPokemonDetail(
+    target: BattlePokemon | PokemonSpecies,
+    returnCtx: DetailReturn,
+  ): void {
+    this.resetScreen();
+    this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x0e0e1a)
+      .setOrigin(0.5)
+      .setInteractive();
+
+    const isInstance = "species" in target;
+    const species = isInstance ? target.species : target;
+    const pokemon = isInstance ? target : null;
+
+    // Header — dex number (1-based index into POKEMON order) + name
+    const allSpecies = getAllPokemon();
+    const dexNum = allSpecies.findIndex((s) => s.id === species.id) + 1;
+
+    this.add.text(20, 22, `#${dexNum.toString().padStart(3, "0")}`, {
+      fontSize: "12px", fontFamily: "monospace", color: "#667788", fontStyle: "bold",
+    });
+    this.add.text(GAME_W / 2, 24, species.name.toUpperCase(), {
+      fontSize: "20px", fontFamily: "monospace", color: "#f8d030", fontStyle: "bold",
+    }).setOrigin(0.5);
+    if (pokemon) {
+      this.add.text(GAME_W - 20, 22, `Lv${pokemon.level}`, {
+        fontSize: "12px", fontFamily: "monospace", color: "#aaaaaa", fontStyle: "bold",
+      }).setOrigin(1, 0);
+    }
+
+    // Type chips
+    const typeChipsStartX = GAME_W / 2 - (species.types.length - 1) * 36;
+    species.types.forEach((t, i) => {
+      const chipX = typeChipsStartX + i * 72;
+      this.add.rectangle(chipX, 52, 64, 18, TYPE_COLORS[t]).setOrigin(0.5).setStrokeStyle(1, 0x222233);
+      this.add.text(chipX, 52, t.toUpperCase(), {
+        fontSize: "10px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+      }).setOrigin(0.5);
+    });
+
+    // Portrait
+    if (this.textures.exists(species.spriteKey)) {
+      const img = this.add.image(GAME_W / 2, 120, species.spriteKey).setDisplaySize(96, 96).setOrigin(0.5);
+      img.texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    }
+
+    // HP + XP bars (instance only)
+    let cursorY = 180;
+    if (pokemon) {
+      const barW = GAME_W - 80;
+      const barX = 40;
+      const hpPct = Math.max(0, pokemon.currentHP / pokemon.maxHP);
+      this.add.text(barX, cursorY, `HP ${pokemon.currentHP}/${pokemon.maxHP}`, {
+        fontSize: "10px", fontFamily: "monospace", color: "#888899",
+      });
+      this.add.rectangle(barX + barW / 2, cursorY + 16, barW, 6, 0x222233).setOrigin(0.5);
+      const hpColor = hpPct > 0.5 ? 0x22cc44 : hpPct > 0.25 ? 0xddcc22 : 0xcc2222;
+      if (hpPct > 0) {
+        this.add.rectangle(barX, cursorY + 13, barW * hpPct, 6, hpColor).setOrigin(0, 0);
+      }
+      cursorY += 26;
+
+      const needed = xpToNextLevel(pokemon.level);
+      const xpPct = Math.min(pokemon.currentXP / needed, 1);
+      this.add.text(barX, cursorY, `XP ${pokemon.currentXP}/${needed}`, {
+        fontSize: "10px", fontFamily: "monospace", color: "#4488cc",
+      });
+      this.add.rectangle(barX + barW / 2, cursorY + 16, barW, 5, 0x222244).setOrigin(0.5);
+      if (xpPct > 0) {
+        this.add.rectangle(barX, cursorY + 13, barW * xpPct, 5, 0x4488cc).setOrigin(0, 0);
+      }
+      cursorY += 28;
+    } else {
+      cursorY += 6;
+    }
+
+    // Stats table — 5 rows, each a name + bar + value.
+    const statsY = cursorY;
+    this.add.text(20, statsY, "STATS", {
+      fontSize: "11px", fontFamily: "monospace", color: "#8899aa", fontStyle: "bold",
+    });
+    const statRows: { label: string; key: keyof typeof species.baseStats }[] = [
+      { label: "HP",  key: "hp" },
+      { label: "Atk", key: "atk" },
+      { label: "Def", key: "def" },
+      { label: "Spd", key: "spd" },
+      { label: "Spc", key: "spc" },
+    ];
+    const maxBase = 180; // approximate upper bound for base stats (Chansey HP=250 out-of-scale, clamp anyway)
+    statRows.forEach((row, i) => {
+      const rowY = statsY + 18 + i * 14;
+      const base = species.baseStats[row.key];
+      const bonus = pokemon ? pokemon.statBonuses[row.key] : 0;
+      this.add.text(22, rowY, row.label, {
+        fontSize: "10px", fontFamily: "monospace", color: "#aaaacc",
+      });
+      // bar
+      const barX = 60;
+      const barW = 180;
+      this.add.rectangle(barX + barW / 2, rowY + 5, barW, 5, 0x222233).setOrigin(0.5);
+      const pct = Math.min(1, base / maxBase);
+      if (pct > 0) {
+        this.add.rectangle(barX, rowY + 3, barW * pct, 5, 0x66aacc).setOrigin(0, 0);
+      }
+      const valueText = bonus > 0 ? `${base}  +${bonus}` : `${base}`;
+      this.add.text(GAME_W - 25, rowY + 3, valueText, {
+        fontSize: "10px", fontFamily: "monospace",
+        color: bonus > 0 ? "#ffcc66" : "#cccccc", fontStyle: "bold",
+      }).setOrigin(1, 0.5);
+    });
+    cursorY = statsY + 18 + statRows.length * 14 + 4;
+
+    // Evolution hint
+    const evo = pokemon ? getEvolutionInfo(pokemon) : null;
+    const stoneTarget = pokemon ? getStoneEvolutionTarget(pokemon) : null;
+    if (evo) {
+      const label = evo.canEvolve
+        ? `Ready to evolve → ${evo.evolvedSpecies.name}`
+        : `Evolves at Lv${evo.requiredLevel} → ${evo.evolvedSpecies.name}`;
+      this.add.text(20, cursorY, label, {
+        fontSize: "10px", fontFamily: "monospace",
+        color: evo.canEvolve ? "#ff8844" : "#888899",
+      });
+      cursorY += 14;
+    } else if (stoneTarget) {
+      this.add.text(20, cursorY, `Evolves to ${stoneTarget.name} with a special item`, {
+        fontSize: "10px", fontFamily: "monospace", color: "#888899",
+      });
+      cursorY += 14;
+    }
+
+    // Moves section
+    this.add.text(20, cursorY, pokemon ? "MOVES" : "LEARNSET", {
+      fontSize: "11px", fontFamily: "monospace", color: "#cc88cc", fontStyle: "bold",
+    });
+    cursorY += 14;
+
+    const moves: { move: MoveData; sub: string }[] = pokemon
+      ? pokemon.moves.map((m) => ({ move: m, sub: "" }))
+      : species.movePool
+          .map((entry) => ({ move: getMove(entry.moveId), sub: `Lv${entry.level}` }))
+          .filter((e) => e.move !== undefined);
+
+    if (moves.length === 0) {
+      this.add.text(GAME_W / 2, cursorY + 20, "No moves.", {
+        fontSize: "11px", fontFamily: "monospace", color: "#666666",
+      }).setOrigin(0.5);
+    } else {
+      const maxRows = 4;
+      const visible = moves.slice(0, maxRows);
+      const extra = moves.length - visible.length;
+      visible.forEach((entry, i) => {
+        const y = cursorY + i * 42;
+        if (y + 42 > GAME_H - 80) return;
+        this.add.rectangle(GAME_W / 2, y + 18, GAME_W - 40, 38, 0x1a1a2e)
+          .setOrigin(0.5).setStrokeStyle(1, 0x333355);
+
+        // Type chip on the left
+        this.add.rectangle(40, y + 18, 42, 14, TYPE_COLORS[entry.move.type]).setOrigin(0.5);
+        this.add.text(40, y + 18, entry.move.type.substring(0, 4).toUpperCase(), {
+          fontSize: "8px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        }).setOrigin(0.5);
+
+        // Name + sub (Lv unlock)
+        this.add.text(70, y + 7, entry.move.name, {
+          fontSize: "11px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+        });
+        const effectLabel = entry.move.effect
+          ? `  ${entry.move.effect.type.toUpperCase()} ${Math.round(entry.move.effect.chance * 100)}%`
+          : "";
+        this.add.text(70, y + 21, `Pow ${entry.move.power}  Acc ${entry.move.accuracy}  CD ${entry.move.cooldown}${effectLabel}`, {
+          fontSize: "8px", fontFamily: "monospace", color: "#8899aa",
+        });
+        if (entry.sub) {
+          this.add.text(GAME_W - 28, y + 7, entry.sub, {
+            fontSize: "9px", fontFamily: "monospace", color: "#667788", fontStyle: "bold",
+          }).setOrigin(1, 0);
+        }
+        // Description, truncated to fit
+        const desc = entry.move.description.length > 44
+          ? entry.move.description.slice(0, 42) + "…"
+          : entry.move.description;
+        this.add.text(70, y + 32, desc, {
+          fontSize: "7px", fontFamily: "monospace", color: "#667788",
+        });
+      });
+      if (extra > 0) {
+        const y = cursorY + Math.min(visible.length, maxRows) * 42 + 4;
+        if (y < GAME_H - 110) {
+          this.add.text(GAME_W / 2, y, `… ${extra} more moves available on the Train screen`, {
+            fontSize: "9px", fontFamily: "monospace", color: "#667788", fontStyle: "italic",
+          }).setOrigin(0.5);
+        }
+      }
+    }
+
+    // Back button — always routes back to the caller's screen
+    const backBg = this.add.rectangle(GAME_W / 2, GAME_H - 45, 200, 38, 0x553333)
+      .setOrigin(0.5).setStrokeStyle(1, 0x774444);
+    this.add.text(GAME_W / 2, GAME_H - 45, "BACK", {
+      fontSize: "14px", fontFamily: "monospace", color: "#ffffff", fontStyle: "bold",
+    }).setOrigin(0.5);
+    backBg.setInteractive();
+    backBg.on("pointerdown", () => this.showScreen(returnCtx.screen, false));
   }
 
   private startAdventure(): void {

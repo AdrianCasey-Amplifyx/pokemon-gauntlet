@@ -132,9 +132,25 @@ export function getMoveCost(move: MoveData, learnLevel: number): number {
   return baseCost + powerComponent + levelComponent;
 }
 
-/** Get moves available to learn at the Train shop for a given Pokemon */
-export function getTrainableMoves(pokemon: BattlePokemon): { moveId: string; move: MoveData; level: number; cost: number; known: boolean }[] {
+export interface TrainableMoveEntry {
+  moveId: string;
+  move: MoveData;
+  level: number;
+  cost: number;
+  known: boolean;
+  /** True when this move is in the player's forgotten bucket (relearn free). */
+  forgotten: boolean;
+}
+
+/**
+ * Get moves available to learn at the Train shop for a given Pokemon. The
+ * return shape tags each entry with `known` (already in the pokemon's
+ * moveset) and `forgotten` (in the forgotten-bucket, relearnable free).
+ * A move is only genuinely "new" when both flags are false.
+ */
+export function getTrainableMoves(pokemon: BattlePokemon): TrainableMoveEntry[] {
   const knownIds = new Set(pokemon.moves.map((m) => m.id));
+  const forgottenIds = new Set(pokemon.forgottenMoves ?? []);
 
   return pokemon.species.movePool
     .filter((entry) => entry.level <= pokemon.level)
@@ -146,9 +162,18 @@ export function getTrainableMoves(pokemon: BattlePokemon): { moveId: string; mov
         level: entry.level,
         cost: getMoveCost(move, entry.level),
         known: knownIds.has(entry.moveId),
+        forgotten: forgottenIds.has(entry.moveId) && !knownIds.has(entry.moveId),
       };
     })
     .sort((a, b) => a.level - b.level);
+}
+
+/**
+ * Count of genuinely-new moves the player has not yet learned and has not
+ * already forgotten. Drives the "N new" badge on the Train roster.
+ */
+export function countNewMoves(pokemon: BattlePokemon): number {
+  return getTrainableMoves(pokemon).filter((t) => !t.known && !t.forgotten).length;
 }
 
 // --- Evolution ---
@@ -195,6 +220,35 @@ function getEvolutionCost(species: PokemonSpecies): number {
   const bst = s.hp + s.atk + s.def + s.spd + s.spc;
   const rarityMult = species.rarity === "rare" ? 2 : species.rarity === "uncommon" ? 1.5 : 1;
   return Math.floor((bst / 4 + 20) * rarityMult);
+}
+
+/**
+ * Reverse lookup for stone-based evolutions. Keys are the pre-evolution
+ * species id — value is the species the player will get when they apply
+ * the right stone. Used by the Train screen to show an informative
+ * "Evolves to {Target} with a special item" hint without naming the
+ * stone (discovery intact).
+ */
+function buildStoneEvolutionTargets(): Map<string, PokemonSpecies> {
+  const map = new Map<string, PokemonSpecies>();
+  for (const species of Object.values(POKEMON)) {
+    if (species.evolvesFrom && species.evolutionStone && !map.has(species.evolvesFrom)) {
+      map.set(species.evolvesFrom, species);
+    }
+  }
+  return map;
+}
+
+const STONE_TARGETS = buildStoneEvolutionTargets();
+
+/**
+ * Target species a Pokemon will evolve into with a stone (any branch), or
+ * null when the species has no stone evolution. For split-branch species
+ * like Eevee this returns the first branch discovered in the POKEMON map —
+ * callers should treat the label as generic (no stone name reveal).
+ */
+export function getStoneEvolutionTarget(pokemon: BattlePokemon): PokemonSpecies | null {
+  return STONE_TARGETS.get(pokemon.species.id) ?? null;
 }
 
 // --- Vitamins ---

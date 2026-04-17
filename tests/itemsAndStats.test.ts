@@ -11,7 +11,12 @@ import { applyItem } from "../src/data/items.ts";
 import { getStoneEvolution } from "../src/data/stoneEvolutions.ts";
 import { getPokemon } from "../src/data/pokemon.ts";
 import { getMove } from "../src/data/moves.ts";
-import { canUseTM } from "../src/data/shop.ts";
+import {
+  canUseTM,
+  countNewMoves,
+  getStoneEvolutionTarget,
+  getTrainableMoves,
+} from "../src/data/shop.ts";
 
 describe("applyStatBonuses", () => {
   it("sums base stats with bonus stats", () => {
@@ -232,5 +237,73 @@ describe("canUseTM (Gen 1 Bulbapedia compatibility)", () => {
     const check = canUseTM(p, "tm_fire_blast", "fire_blast");
     expect(check.ok).toBe(false);
     expect(check.reason).toBe("already_knows");
+  });
+});
+
+describe("forgotten moves bucket + countNewMoves (PRD §2.8)", () => {
+  it("getTrainableMoves marks forgotten ids and excludes them from countNewMoves", () => {
+    const p = createBattlePokemon(getPokemon("charmander"), 16);
+    // At L16 Charmander will have more than one move in its pool. Strip
+    // everything to a single Tackle so the other pool entries appear as
+    // "unlearned" options.
+    p.moves = [getMove("scratch")];
+    p.cooldowns = [0];
+
+    const beforeForget = countNewMoves(p);
+    expect(beforeForget).toBeGreaterThan(0);
+
+    // Pretend the player forgot every unlearned move.
+    const unlearnedIds = getTrainableMoves(p).filter((t) => !t.known).map((t) => t.moveId);
+    p.forgottenMoves = unlearnedIds;
+
+    // Everything that isn't in p.moves must now be flagged as forgotten.
+    const flagged = getTrainableMoves(p);
+    for (const entry of flagged) {
+      if (!entry.known) expect(entry.forgotten).toBe(true);
+    }
+
+    // Once in the forgotten bucket, countNewMoves ignores them.
+    expect(countNewMoves(p)).toBe(0);
+  });
+
+  it("a move re-learned is no longer marked forgotten", () => {
+    const p = createBattlePokemon(getPokemon("charmander"), 20);
+    p.moves = [getMove("scratch")];
+    p.cooldowns = [0];
+
+    // Ember is in Charmander's level-1 learnset — force it into the
+    // forgotten bucket and verify the tag round-trips correctly.
+    p.forgottenMoves = ["ember"];
+    expect(getTrainableMoves(p).find((t) => t.moveId === "ember")?.forgotten).toBe(true);
+
+    // Now add Ember back — simulates the RELEARN button.
+    p.moves.push(getMove("ember"));
+    p.forgottenMoves = p.forgottenMoves.filter((id) => id !== "ember");
+
+    const entry = getTrainableMoves(p).find((t) => t.moveId === "ember")!;
+    expect(entry.known).toBe(true);
+    expect(entry.forgotten).toBe(false);
+  });
+});
+
+describe("stone evolution target lookup (PRD §2.6)", () => {
+  it("returns the stone evolution target for a species with one", () => {
+    const pikachu = createBattlePokemon(getPokemon("pikachu"), 20);
+    expect(getStoneEvolutionTarget(pikachu)?.id).toBe("raichu");
+  });
+
+  it("returns null for a species whose only evolution is level-based", () => {
+    const charmander = createBattlePokemon(getPokemon("charmander"), 10);
+    expect(getStoneEvolutionTarget(charmander)).toBeNull();
+  });
+
+  it("returns null for a species with no evolution", () => {
+    const magikarp = createBattlePokemon(getPokemon("magikarp"), 10);
+    // Magikarp evolves at level 20 so it has a level-based evolution — use
+    // Chansey which has no evolution line in this repo's Gen 1 pool.
+    expect(getStoneEvolutionTarget(magikarp)).toBeNull();
+
+    const chansey = createBattlePokemon(getPokemon("chansey"), 10);
+    expect(getStoneEvolutionTarget(chansey)).toBeNull();
   });
 });
