@@ -1,35 +1,35 @@
 // Procedural music using Web Audio API.
 //
-// Track definitions live in `./tracks.ts` — each track is a list of
-// channels (melody / bass / etc.) with its own BPM. At play time the
-// manager spawns one self-scheduling timer per channel, each looping
-// its own `notes[]` independently, so channels of different lengths
-// still line up over the long run (Game Boy style). No sampled audio
-// is ever loaded.
+// Track definitions live either in `./tracks.ts` (hand-authored
+// chiptune, used as a fallback) or are loaded from `./midi/*.mid`
+// at boot via `./midiLoader.ts` (preferred when present). Both
+// sources produce the same `TrackDef { bpm, channels[] }` shape;
+// MusicManager spawns one self-scheduling timer per channel, each
+// looping its own notes[] independently.
 
 import { TRACKS, type TrackId } from "./tracks.ts";
+import type { TrackDef } from "./tracks.ts";
+import { loadAllMidiTracks } from "./midiLoader.ts";
 
-// Note frequencies covering the range used across all tracks
-// (A2 through C6, enharmonic spellings aliased).
-const NOTES: Record<string, number> = {
-  // Octave 2
-  A2: 110.00, "A#2": 116.54, Bb2: 116.54, B2: 123.47,
-  // Octave 3
-  C3: 130.81, "C#3": 138.59, Db3: 138.59, D3: 146.83, "D#3": 155.56, Eb3: 155.56,
-  E3: 164.81, F3: 174.61, "F#3": 185.00, Gb3: 185.00, G3: 196.00, "G#3": 207.65, Ab3: 207.65,
-  A3: 220.00, "A#3": 233.08, Bb3: 233.08, B3: 246.94,
-  // Octave 4
-  C4: 261.63, "C#4": 277.18, Db4: 277.18, D4: 293.66, "D#4": 311.13, Eb4: 311.13,
-  E4: 329.63, F4: 349.23, "F#4": 369.99, Gb4: 369.99, G4: 392.00, "G#4": 415.30, Ab4: 415.30,
-  A4: 440.00, "A#4": 466.16, Bb4: 466.16, B4: 493.88,
-  // Octave 5
-  C5: 523.25, "C#5": 554.37, Db5: 554.37, D5: 587.33, "D#5": 622.25, Eb5: 622.25,
-  E5: 659.25, F5: 698.46, "F#5": 739.99, Gb5: 739.99, G5: 783.99, "G#5": 830.61, Ab5: 830.61,
-  A5: 880.00, "A#5": 932.33, Bb5: 932.33, B5: 987.77,
-  // Octave 6
-  C6: 1046.50, "C#6": 1108.73, Db6: 1108.73, D6: 1174.66, "D#6": 1244.51, Eb6: 1244.51,
-  E6: 1318.51, F6: 1396.91,
+// Note frequencies generated for the full MIDI range. Covers C0-C8
+// plus enharmonic flat spellings (Bb ≡ A#, etc.) so tracks written
+// in flat keys don't trip on missing keys.
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const FLAT_ALIAS: Record<string, string> = {
+  "C#": "Db", "D#": "Eb", "F#": "Gb", "G#": "Ab", "A#": "Bb",
 };
+const NOTES: Record<string, number> = (() => {
+  const result: Record<string, number> = {};
+  for (let midi = 0; midi <= 127; midi++) {
+    const octave = Math.floor(midi / 12) - 1;
+    const name = NOTE_NAMES[midi % 12];
+    const freq = 440 * Math.pow(2, (midi - 69) / 12);
+    result[`${name}${octave}`] = freq;
+    const flat = FLAT_ALIAS[name];
+    if (flat) result[`${flat}${octave}`] = freq;
+  }
+  return result;
+})();
 
 // One-shot sound effects. Each preset is a sequence of notes played in
 // sequence (via `delay` in ms from trigger time) with short envelopes.
@@ -52,40 +52,35 @@ interface SFXNote {
 const SFX_PRESETS: Record<SFXKind, SFXNote[]> = {
   // Cash-register "ca-ching": two rising square blips
   purchase: [
-    { freq: 987.77, dur: 0.08, delay: 0, wave: "square", vol: 0.22 },   // B5
-    { freq: 1318.51, dur: 0.14, delay: 90, wave: "square", vol: 0.20 }, // E6
+    { freq: 987.77, dur: 0.08, delay: 0, wave: "square", vol: 0.22 },
+    { freq: 1318.51, dur: 0.14, delay: 90, wave: "square", vol: 0.20 },
   ],
   // Rising C-E-G arpeggio
   heal: [
-    { freq: 523.25, dur: 0.09, delay: 0, wave: "triangle", vol: 0.22 }, // C5
-    { freq: 659.25, dur: 0.09, delay: 80, wave: "triangle", vol: 0.22 },// E5
-    { freq: 783.99, dur: 0.16, delay: 160, wave: "triangle", vol: 0.22 },// G5
+    { freq: 523.25, dur: 0.09, delay: 0, wave: "triangle", vol: 0.22 },
+    { freq: 659.25, dur: 0.09, delay: 80, wave: "triangle", vol: 0.22 },
+    { freq: 783.99, dur: 0.16, delay: 160, wave: "triangle", vol: 0.22 },
   ],
-  // Short click-blip for generic item use
   item_use: [
     { freq: 880.0, dur: 0.05, delay: 0, wave: "triangle", vol: 0.18 },
     { freq: 1174.66, dur: 0.07, delay: 50, wave: "triangle", vol: 0.16 },
   ],
-  // Celebratory major arpeggio for egg hatch
   hatch: [
     { freq: 523.25, dur: 0.1, delay: 0, wave: "triangle", vol: 0.22 },
     { freq: 659.25, dur: 0.1, delay: 100, wave: "triangle", vol: 0.22 },
     { freq: 783.99, dur: 0.1, delay: 200, wave: "triangle", vol: 0.22 },
     { freq: 1046.5, dur: 0.22, delay: 300, wave: "triangle", vol: 0.24 },
   ],
-  // Rising "ding" for learning a move
   learn: [
     { freq: 659.25, dur: 0.08, delay: 0, wave: "square", vol: 0.18 },
     { freq: 987.77, dur: 0.14, delay: 80, wave: "square", vol: 0.18 },
   ],
-  // Low descending pair for errors / denials
   error: [
     { freq: 220, dur: 0.12, delay: 0, wave: "sawtooth", vol: 0.16 },
     { freq: 165, dur: 0.18, delay: 80, wave: "sawtooth", vol: 0.14 },
   ],
 };
 
-// Re-export so callers only import one module.
 export type { TrackId } from "./tracks.ts";
 
 class MusicManagerClass {
@@ -96,6 +91,18 @@ class MusicManagerClass {
   private activeOscillators: OscillatorNode[] = [];
   private volume = 0.15;
   private started = false;
+  private midiTracks: Record<string, TrackDef> = {};
+  private initPromise: Promise<void> | null = null;
+
+  /** Fetch + parse every .mid in `src/audio/midi/`. Idempotent. */
+  init(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = loadAllMidiTracks().then((tracks) => {
+        this.midiTracks = tracks;
+      });
+    }
+    return this.initPromise;
+  }
 
   private ensureContext(): AudioContext {
     if (!this.ctx) {
@@ -110,14 +117,34 @@ class MusicManagerClass {
     return this.ctx;
   }
 
+  /**
+   * Resolve a track id to its playable definition.
+   *
+   * Fallback chain:
+   *   1. MIDI loaded for this exact id
+   *   2. battle_final -> battle_boss (if user hasn't sourced a champion theme)
+   *   3. MIDI loaded for "town" (generic hub fallback)
+   *   4. Hand-authored tracks.ts entry for this id
+   *   5. null (silent)
+   */
+  private resolveTrack(id: TrackId): TrackDef | null {
+    if (id === "none") return null;
+    if (this.midiTracks[id]) return this.midiTracks[id];
+    if (id === "battle_final" && this.midiTracks["battle_boss"]) {
+      return this.midiTracks["battle_boss"];
+    }
+    if (this.midiTracks["town"]) return this.midiTracks["town"];
+    if (TRACKS[id]) return TRACKS[id];
+    return null;
+  }
+
   play(track: TrackId): void {
     if (track === this.currentTrack) return;
     this.stop();
     this.currentTrack = track;
     this.started = true;
 
-    if (track === "none") return;
-    const def = TRACKS[track];
+    const def = this.resolveTrack(track);
     if (!def) return;
 
     const secondsPerBeat = 60 / def.bpm;
@@ -158,7 +185,6 @@ class MusicManagerClass {
           osc.type = channel.wave;
           osc.frequency.value = freq;
 
-          // Gentle attack / release envelope so notes don't click.
           gain.gain.setValueAtTime(0, ctx.currentTime);
           gain.gain.linearRampToValueAtTime(channel.volume, ctx.currentTime + 0.02);
           gain.gain.linearRampToValueAtTime(channel.volume * 0.6, ctx.currentTime + dur * 0.7);
