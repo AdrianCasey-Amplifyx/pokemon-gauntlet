@@ -4,6 +4,7 @@ All notable game changes are recorded here. Newest entries at the top. See `CLAU
 
 ## 2026-04-17
 
+- **combat:** Moves can now miss. Every move's accuracy is audited against Gen 1 Bulbapedia (PRD 2026-04-17 §1.3) — Horn Drill and Fissure are properly 30% OHKOs-in-progress, Hydro Pump drops to 80, Blizzard to 90, Sing to 55, Hypnosis to 60, Thunder to 70, Fire Blast to 85, etc. Under-100 accuracy moves now roll against `rng >= accuracy/100`; a miss emits `move_missed`, burns the cooldown, and the HUD surfaces "attack missed!". Previously every move was locked at 100% because the miss path didn't exist.
 - **combat:** X-item boosts are now strictly one-battle-only (PRD 2026-04-17 §1.5). Boosts persist through switches as designed, but a pokemon's `battleBoosts` are cleared the moment it faints (so reviving mid-battle brings it back clean), and every player party member's boosts are wiped when the battle ends. Previously boosts could linger into the next battle on pokemon that weren't on the active party when the next `start()` ran. Implementation: new `clearBoosts` helper + `endBattle` method in `src/core/battleStateMachine.ts`; 4 new tests cover apply/swap/faint/battle-end transitions.
 - **ui:** Train screen now blocks forgetting the last no-cooldown move (PRD 2026-04-17 §1.4). Both the `FORGET` button on Current Moves and the TM forget-picker enforce `isLastCdZero`, with a tap on the disabled button surfacing the reason via toast so players aren't left guessing why the action is disabled.
 

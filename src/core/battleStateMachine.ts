@@ -16,6 +16,7 @@ import type {
   StatusSkipEvent,
   StatBoostEvent,
   StatusType,
+  MoveMissedEvent,
 } from "../types.ts";
 import { calculateDamage, stageMultiplier } from "./damageCalc.ts";
 import { useMove, tickCooldowns } from "./cooldownManager.ts";
@@ -255,6 +256,19 @@ export class BattleStateMachine {
       moveName: move.name,
       pokemonName: attacker.species.name,
     } as MoveUsedEvent);
+
+    // Accuracy check. Moves with accuracy < 100 can miss — no damage, no status.
+    // Roll is independent of the damage-variance roll (which happens later in
+    // calculateDamage). accuracy: 100 always hits (no RNG consumed).
+    if (move.accuracy < 100 && this.rng() >= move.accuracy / 100) {
+      events.push({
+        type: "move_missed",
+        actor: action.actor,
+        moveName: move.name,
+        pokemonName: attacker.species.name,
+      } as MoveMissedEvent);
+      return;
+    }
 
     const { damage, effectiveness, isStab } = calculateDamage(attacker, defender, move, this.rng);
 

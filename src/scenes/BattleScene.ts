@@ -143,6 +143,10 @@ export class BattleScene extends Phaser.Scene {
         this.hud.showMessage(`${event.pokemonName} used ${event.moveName}!`);
         break;
 
+      case "move_missed":
+        this.hud.showMessage(`${event.pokemonName}'s attack missed!`);
+        break;
+
       case "damage":
         this.hud.showDamageFloater(event.target, event.amount);
         this.hud.flashSprite(event.target);

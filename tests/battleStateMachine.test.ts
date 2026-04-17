@@ -2,8 +2,13 @@ import { describe, it, expect } from "vitest";
 import { BattleStateMachine } from "../src/core/battleStateMachine.ts";
 import { createBattlePokemon } from "../src/core/statCalc.ts";
 import { getPokemon } from "../src/data/pokemon.ts";
+import { getMove } from "../src/data/moves.ts";
 import { createStarterBelt } from "../src/data/items.ts";
 import type { AnyBattleEvent } from "../src/types.ts";
+
+function getMoveForTest(id: string) {
+  return getMove(id);
+}
 
 const fixedRng = () => 0.5;
 
@@ -218,6 +223,37 @@ describe("BattleStateMachine", () => {
     charmander.currentHP = 0;
     battle.submitPlayerAttack(0);
     expect(charmander.battleBoosts.atk).toBe(0);
+  });
+
+  // --- Accuracy (PRD §1.3) ---
+  it("emits move_missed when accuracy roll fails", () => {
+    // Horn Drill has accuracy 30. Use a controllable RNG that returns 0.99
+    // on the accuracy roll to guarantee a miss.
+    const rng = () => 0.99;
+    const player = makeParty(["nidoking"]);
+    const enemy = makeParty(["squirtle"]);
+    // Force Horn Drill in slot 0
+    player[0].moves[0] = getMoveForTest("horn_drill");
+    player[0].cooldowns[0] = 0;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const missed = events.filter((e) => e.type === "move_missed" && e.actor === "player");
+    expect(missed.length).toBe(1);
+  });
+
+  it("hits when accuracy roll passes", () => {
+    // Horn Drill at accuracy 30, rng 0.1 → hits (0.1 < 0.3).
+    const rng = () => 0.1;
+    const player = makeParty(["nidoking"]);
+    const enemy = makeParty(["squirtle"]);
+    player[0].moves[0] = getMoveForTest("horn_drill");
+    player[0].cooldowns[0] = 0;
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const missed = events.filter((e) => e.type === "move_missed" && e.actor === "player");
+    expect(missed.length).toBe(0);
   });
 
   it("clears all player battleBoosts on battle end", () => {

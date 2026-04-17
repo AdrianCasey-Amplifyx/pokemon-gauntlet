@@ -118,6 +118,8 @@ damage = max(1, floor(damage))   (unless fully immune, in which case 0)
 
 `atk/def` uses **Attack/Defense** for physical moves and **Special/Special** for special moves (single Special stat like Gen 1).
 
+**Accuracy & miss check.** Each move has an accuracy value (0–100). Before damage is calculated, a uniform `[0, 1)` roll compares against `accuracy / 100`; if it fails, the move **misses** — no damage, no status, no drain, and the move still burns its cooldown. Moves at 100% never roll (always hit). Values match Gen 1 Bulbapedia for Gen-1 moves (e.g. Horn Drill 30, Fissure 30, Hypnosis 60, Thunder 70, Hydro Pump 80, Fire Blast 85, Blizzard 90, Razor Leaf 95, Tackle 95) and canonical accuracy for later-gen moves the game uses.
+
 ### 3.4 Stat Formula
 
 Stats scale with level from species base stats (`src/core/statCalc.ts`):

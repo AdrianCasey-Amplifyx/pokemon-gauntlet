@@ -229,6 +229,13 @@ export interface StatBoostEvent extends BattleEvent {
   itemName: string;
 }
 
+export interface MoveMissedEvent extends BattleEvent {
+  type: "move_missed";
+  actor: "player" | "enemy";
+  moveName: string;
+  pokemonName: string;
+}
+
 export type AnyBattleEvent =
   | DamageEvent
   | MoveUsedEvent
@@ -240,7 +247,8 @@ export type AnyBattleEvent =
   | StatusAppliedEvent
   | StatusDamageEvent
   | StatusSkipEvent
-  | StatBoostEvent;
+  | StatBoostEvent
+  | MoveMissedEvent;
 
 // --- Map ---
 
