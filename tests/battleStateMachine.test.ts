@@ -308,6 +308,27 @@ describe("BattleStateMachine", () => {
     expect(player[0].currentHP).toBeGreaterThan(preHP);
   });
 
+  it("Leech Life drains at least 1 HP even on a minimum-damage hit", () => {
+    // Pikachu (tiny atk) hitting Snorlax (huge def) on a 1 HP leech should
+    // still heal 1 back, not floor to 0 (0.5 * 1 = 0 → floor-to-0 was the bug).
+    const rng = () => 0.5;
+    const player = makeParty(["pikachu"]);
+    const enemy = makeParty(["snorlax"]);
+    player[0].moves[0] = getMoveForTest("leech_life");
+    player[0].cooldowns[0] = 0;
+    player[0].stats.spd = 999;
+    player[0].stats.atk = 1; // guarantee minimum damage
+    player[0].currentHP = Math.max(1, player[0].maxHP - 5);
+    const battle = new BattleStateMachine(player, enemy, createStarterBelt(), rng);
+    battle.start();
+    const events = battle.submitPlayerAttack(0);
+    const drain = events.find((e) => e.type === "drain_heal" && e.actor === "player") as
+      | { type: "drain_heal"; amount: number }
+      | undefined;
+    expect(drain).toBeDefined();
+    expect(drain!.amount).toBeGreaterThanOrEqual(1);
+  });
+
   it("Leech Life emits no drain_heal when the attacker is already at full HP", () => {
     const rng = () => 0.5;
     const player = makeParty(["paras"]);

@@ -605,9 +605,10 @@ export class BattleStateMachine {
       dState.bideDamage = (dState.bideDamage ?? 0) + totalDamage;
     }
 
-    // Drain heal
+    // Drain heal — minimum 1 when any damage was dealt so tiny hits still drip
+    // some HP back (matches the "always drains something" feel of canon).
     if (move.drainRatio && totalDamage > 0 && attacker.currentHP > 0) {
-      const heal = Math.floor(totalDamage * move.drainRatio);
+      const heal = Math.max(1, Math.floor(totalDamage * move.drainRatio));
       const actualHeal = Math.min(heal, attacker.maxHP - attacker.currentHP);
       if (actualHeal > 0) {
         attacker.currentHP += actualHeal;
